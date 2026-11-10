@@ -172,10 +172,33 @@ OpenRouter, Ollama, vLLM or LM Studio is a registry entry, not new code.
 
 ### Conversation + layered memory
 `conversation/manager.py` persists conversations and supplies a bounded context
-window. `memory_ext/store.py` is a separate, transparent, exportable SQLite
-store with five categories (`conversation`, `preference`, `personal`,
-`project`, `task`). Every item is listed in the UI, individually deletable, and
-`forget_everything` requires typing an explicit confirmation phrase.
+window. Conversations can be **pinned**, **archived**, **searched** (titles and
+every message body, with a snippet showing why a row matched) and **exported**
+as Markdown or JSON. The schema upgrade is additive and applied in place, so an
+existing `tolesh.db` keeps every row.
+
+`memory_ext/store.py` is a separate, transparent, exportable SQLite store with
+five categories (`conversation`, `preference`, `personal`, `project`, `task`).
+Every item is listed in the UI, individually deletable, and `forget_everything`
+requires typing an explicit confirmation phrase.
+
+### Projects, files, web and code
+Four modules sit beside the chat core and none of them imports the interface:
+
+| Module | What it does |
+|---|---|
+| `workspace/projects.py` | Named workspaces with instructions every conversation inside inherits. Deleting a project keeps its conversations and unfiles them. |
+| `workspace/attachments.py` | Uploads stored beside the database (mode 0600), text extracted (pdf, docx, html, text/code), chunked with overlap, ranked against the question. Only matching chunks enter the prompt. |
+| `netsearch/` | Page reading (http/https only, private addresses refused, 2 MB cap, 12 s timeout) and search with explicit backends: Tavily, Brave, your own SearXNG, or Wikipedia keyless. |
+| `codeexec/` | Python in a disposable child: fresh temp cwd, stripped environment, `RLIMIT_CPU`/`AS`/`FSIZE`/`NOFILE`, wall-clock timeout, `unshare -n` network isolation when the kernel allows it. Containment, not a security boundary. |
+
+Retrieved text is **untrusted by construction**: pages arrive in `<web_page>`
+blocks, files in `<attached_file>` blocks, and the persona tells the model that
+instructions inside them are data. The closing marker is stripped from the page
+body so a page cannot end the block early. Verified against a live injection
+probe — the model reported the attempt instead of obeying it.
+
+### Shared HTTP/SSE backend
 
 ### Permission-gated computer control
 `permissions/policy.py` classifies actions as `safe`, `elevated` or
@@ -190,10 +213,15 @@ missing TODO.
 ### Shared HTTP/SSE backend
 `src/tolesh/server/app.py` exposes `/api/health`, `/api/config`,
 `/api/providers`, `/api/providers/{name}/models` (live model discovery),
-`/api/models`, `/api/chat` (SSE), `/api/chat/sync`, conversations, memory, usage,
-permissions, tools, and serves the static `web/` client. The same JSON/SSE
-contract is intended for a future Cloudflare Pages client and a future Android
-client.
+`/api/models`, `/api/chat` (SSE), `/api/chat/sync`, conversations (list, search,
+flags, export), projects, attachments, `/api/web/{fetch,search,backends}`,
+`/api/exec`, memory, usage, permissions, tools, and serves the static `web/`
+client. The same JSON/SSE contract is intended for a future Cloudflare Pages
+client and a future Android client.
+
+`/api/chat` takes four optional context switches — `attachment_ids`,
+`web_urls`, `web_search`, `project_id` — so network access and file reading are
+always an explicit per-message choice, never a side effect of typing.
 
 ### Voice
 - **Browser** (`web/js/voice.js`): real Web Speech API STT/TTS, continuous

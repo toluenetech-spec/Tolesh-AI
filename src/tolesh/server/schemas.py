@@ -14,14 +14,61 @@ class ChatRequest(BaseModel):
     task: str = "chat"
     temperature: float = 0.7
     max_tokens: int = 1024
+    # Files already uploaded through /api/attachments; only the chunks that
+    # match the question are put in the prompt.
+    attachment_ids: list[str] = Field(default_factory=list, max_length=20)
+    # Pages to read before answering, and whether to search the web for the
+    # question itself. Both are opt-in per message: silent network access would
+    # make a private assistant unpredictable.
+    web_urls: list[str] = Field(default_factory=list, max_length=5)
+    web_search: bool = False
+    project_id: str | None = None
 
 
 class ConversationCreate(BaseModel):
     title: str = "New conversation"
+    project_id: str | None = None
 
 
 class ConversationRename(BaseModel):
     title: str
+
+
+class ConversationFlags(BaseModel):
+    """Pin, archive or file a conversation. Omitted fields are untouched."""
+
+    pinned: bool | None = None
+    archived: bool | None = None
+    project_id: str | None = None
+    clear_project: bool = False
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    description: str = Field(default="", max_length=2000)
+    instructions: str = Field(default="", max_length=4000)
+
+
+class ProjectPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=2000)
+    instructions: str | None = Field(default=None, max_length=4000)
+
+
+class WebFetchRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2000)
+
+
+class WebSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500)
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class ExecRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=100_000)
+    timeout: int = Field(default=10, ge=1, le=120)
+    memory_mb: int = Field(default=512, ge=64, le=4096)
+    isolate_network: bool = True
 
 
 class MemoryCreate(BaseModel):

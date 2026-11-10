@@ -36,6 +36,13 @@
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01" stroke-linecap="round" stroke-width="2.2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.4 3.8 5.5 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.5-3.8-9S9.5 5.4 12 3Z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3.5 3.5H6.5L10 9 9 3Z"/><path d="M12 12.5V21"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4.5" rx="1.5"/><path d="M5 8.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V8.5M10 12.5h4"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M20 11.5 12 19.5a4.5 4.5 0 0 1-6.4-6.4l8-8a3 3 0 0 1 4.3 4.3l-8 8a1.5 1.5 0 0 1-2.1-2.1l7.3-7.3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M4 20h16"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5v-10Z"/></symbol>
   </svg>
 
   <div class="app-shell">
@@ -49,6 +56,9 @@
       <div class="rail-nav">
         <button class="rail-item is-active" data-view="chat" aria-current="true" title="Chat">
           <svg class="icon" aria-hidden="true"><use href="#i-chat" /></svg><span class="rail-label">Chat</span>
+        </button>
+        <button class="rail-item" data-view="chats" title="Search conversations and projects">
+          <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg><span class="rail-label">History</span>
         </button>
         <button class="rail-item" data-view="memory" title="Memory">
           <svg class="icon" aria-hidden="true"><use href="#i-layers" /></svg><span class="rail-label">Memory</span>
@@ -81,9 +91,17 @@
       <header class="topbar">
         <div class="topbar-left">
           <p class="eyebrow">TOLESH <span class="eyebrow-sep">/</span> PERSONAL AI</p>
-          <h1 class="conversation-title" id="convTitle">New conversation</h1>
+          <div class="title-row">
+            <h1 class="conversation-title" id="convTitle">New conversation</h1>
+            <button class="project-chip" id="projectChip" type="button"
+                    title="Choose a project for this conversation">
+              <svg class="icon" aria-hidden="true"><use href="#i-folder" /></svg>
+              <span id="projectChipName">No project</span>
+            </button>
+          </div>
         </div>
         <div class="topbar-right">
+          <div id="conversationActions" class="conversation-actions"></div>
           <div id="modelSelector" class="model-selector"></div>
           <button class="icon-btn context-toggle" id="contextToggle" aria-label="Toggle context panel" aria-expanded="true" aria-controls="contextPanel" title="Context">
             <svg class="icon" aria-hidden="true"><use href="#i-panel" /></svg>
@@ -132,8 +150,18 @@
         <p class="stream-status" id="streamStatus" role="status" aria-live="polite"></p>
         <form class="composer" id="composer">
           <label class="sr-only" for="input">Message Tolesh</label>
+          <div class="attachment-chips" id="attachmentChips" hidden></div>
           <textarea id="input" name="message" rows="1" placeholder="Talk to Tolesh…" autocomplete="off" spellcheck="true"></textarea>
           <div class="composer-actions">
+            <button type="button" class="icon-btn" id="attachBtn" aria-label="Attach a file" title="Attach a file">
+              <svg class="icon" aria-hidden="true"><use href="#i-paperclip" /></svg>
+            </button>
+            <button type="button" class="icon-btn web-toggle" id="webBtn" aria-pressed="false"
+                    aria-label="Search the web for this message" title="Search the web">
+              <svg class="icon" aria-hidden="true"><use href="#i-globe" /></svg>
+            </button>
+            <input type="file" id="fileInput" multiple hidden
+                   accept=".pdf,.docx,.txt,.md,.markdown,.csv,.tsv,.json,.log,.py,.js,.ts,.html,.htm,.xml,.yaml,.yml,.sql,.sh,.rst" />
             <button type="button" class="icon-btn mic-btn" id="voiceBtn" aria-label="Speak instead of typing" title="Speak">
               <svg class="icon" aria-hidden="true"><use href="#i-mic" /></svg>
             </button>
@@ -158,6 +186,25 @@
       </div>
 
       <div class="context-scroll">
+        <section class="panel-section" aria-labelledby="h-history">
+          <div class="panel-head">
+            <h3 id="h-history">Conversations</h3>
+            <button class="text-btn" id="newProjectBtn" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-folder" /></svg> New project
+            </button>
+          </div>
+          <label class="search-field" for="historySearch">
+            <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+            <input id="historySearch" type="search" placeholder="Search conversations"
+                   autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="project-chips" id="projectChips" role="group" aria-label="Filter by project"></div>
+          <div id="historyList" class="history-list"></div>
+          <button class="text-btn" id="archivedToggle" type="button" aria-pressed="false">
+            Show archived
+          </button>
+        </section>
+
         <section class="panel-section" aria-labelledby="h-status">
           <div class="panel-head"><h3 id="h-status">Engine</h3><span class="panel-badge" id="engineBadge">—</span></div>
           <div class="engine-grid" id="engineGrid"></div>

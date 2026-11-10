@@ -416,6 +416,8 @@ These are real fixes, not test edits to force green.
 | After fixes 1–8 above | `1 failed, 5944 passed, 27 skipped, 2 deselected, 3 warnings in 300.68s` |
 | After unified desktop integration + fixes 9–12 | `5961 passed, 27 skipped, 2 deselected, 5 warnings in 280.86s` |
 | After Dahl provider + web interface work (fixes 13–16) | `5978 passed, 27 skipped, 2 deselected, 5 warnings in 279.92s` |
+| After Token Harbor / MiMo / MiniMax + editable chain | `6030 passed, 27 skipped, 2 deselected, 6 warnings` |
+| After history, projects, attachments, web and sandbox (30 new tests) | `6060 passed, 27 skipped, 2 deselected, 6 warnings in 313.05s` |
 
 **Final full-suite result (current):** `DISPLAY=:99 python3.11 -m pytest -q`
 (against `Xvfb :99`) returned

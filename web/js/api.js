@@ -49,6 +49,43 @@ export const put = (path, body) =>
   request(path, { method: 'PUT', headers: headers(true), body: JSON.stringify(body) });
 export const del = (path) => request(path, { method: 'DELETE', headers: headers() });
 
+/** Upload one file as a raw body. The server reads `?filename=` rather than a
+ *  multipart form, so the browser can send the File object unchanged. */
+export async function uploadFile(file) {
+  const path = `/api/attachments?filename=${encodeURIComponent(file.name)}`;
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: { ...headers(), 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try { detail = (await res.json()).detail || detail; } catch (_) { /* noop */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+/** Download a generated file (conversation export) through the API client so
+ *  the auth token travels with the request. */
+export async function download(path) {
+  const res = await fetch(BASE + path, { headers: headers() });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const name = match ? match[1] : 'tolesh-export.md';
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return name;
+}
+
 export async function health() {
   return get('/api/health');
 }

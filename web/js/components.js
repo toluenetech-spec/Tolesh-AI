@@ -714,3 +714,173 @@ export function forgetDialog({ onConfirm }) {
   });
   root.querySelector('#forgetPhrase').focus();
 }
+
+/* --------------------------------------------------------------- history */
+function relativeTime(seconds) {
+  const delta = Math.max(0, Date.now() / 1000 - Number(seconds || 0));
+  if (delta < 60) return 'just now';
+  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+  if (delta < 604800) return `${Math.floor(delta / 86400)}d ago`;
+  return new Date(seconds * 1000).toLocaleDateString();
+}
+
+/** Conversation history: the list ChatGPT puts in the sidebar, with the
+ *  actions that make it usable (pin, archive, export, delete). */
+export function renderHistory(container, {
+  conversations = [], activeId = null, query = '', archived = false,
+  onOpen, onPin, onArchive, onExport, onDelete,
+} = {}) {
+  if (!conversations.length) {
+    container.innerHTML = `<p class="panel-note">${query
+      ? 'Nothing matched that search.'
+      : archived
+        ? 'No archived conversations.'
+        : 'No conversations yet. Say something to start one.'}</p>`;
+    return;
+  }
+  container.innerHTML = conversations.map((c) => `
+    <div class="history-row ${c.id === activeId ? 'is-active' : ''} ${c.pinned ? 'is-pinned' : ''}"
+         data-id="${esc(c.id)}">
+      <button class="history-open" data-open="${esc(c.id)}" title="${esc(c.title)}">
+        <span class="history-title">${esc(c.title)}</span>
+        <span class="history-meta">${c.message_count || 0} msg · ${relativeTime(c.updated_at)}</span>
+        ${c.snippet ? `<span class="history-snippet">${esc(c.snippet)}</span>` : ''}
+      </button>
+      <span class="history-actions">
+        <button class="mini-btn" data-pin="${esc(c.id)}" aria-pressed="${c.pinned ? 'true' : 'false'}"
+                title="${c.pinned ? 'Unpin' : 'Pin'}">${icon('pin')}</button>
+        <button class="mini-btn" data-archive="${esc(c.id)}"
+                title="${archived ? 'Restore' : 'Archive'}">${icon('archive')}</button>
+        <button class="mini-btn" data-export="${esc(c.id)}" title="Export as Markdown">${icon('download')}</button>
+        <button class="mini-btn is-danger" data-delete="${esc(c.id)}" title="Delete">${icon('trash')}</button>
+      </span>
+    </div>`).join('');
+
+  container.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => onOpen?.(el.dataset.open));
+  });
+  container.querySelectorAll('[data-pin]').forEach((el) => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); onPin?.(el.dataset.pin, el.getAttribute('aria-pressed') !== 'true'); });
+  });
+  container.querySelectorAll('[data-archive]').forEach((el) => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); onArchive?.(el.dataset.archive, !archived); });
+  });
+  container.querySelectorAll('[data-export]').forEach((el) => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); onExport?.(el.dataset.export); });
+  });
+  container.querySelectorAll('[data-delete]').forEach((el) => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); onDelete?.(el.dataset.delete); });
+  });
+}
+
+export function renderProjectChips(container, { projects = [], filter = 'all', onSelect } = {}) {
+  const chips = [{ id: 'all', label: 'All' }, { id: 'unfiled', label: 'Unfiled' },
+    ...projects.map((p) => ({ id: p.id, label: `${p.name} (${p.conversation_count || 0})` }))];
+  container.innerHTML = chips.map((c) => `
+    <button class="chip ${c.id === filter ? 'is-active' : ''}" data-project="${esc(c.id)}"
+            aria-pressed="${c.id === filter}">${esc(c.label)}</button>`).join('');
+  container.querySelectorAll('[data-project]').forEach((el) => {
+    el.addEventListener('click', () => onSelect?.(el.dataset.project));
+  });
+}
+
+export function renderConversationActions(container, {
+  hasConversation = false, pinned = false, archived = false,
+  onPin, onArchive, onExport, onDelete,
+} = {}) {
+  container.innerHTML = `
+    <button class="icon-btn" data-act="pin" ${hasConversation ? '' : 'disabled'}
+            aria-pressed="${pinned}" title="${pinned ? 'Unpin conversation' : 'Pin conversation'}">${icon('pin')}</button>
+    <button class="icon-btn" data-act="archive" ${hasConversation ? '' : 'disabled'}
+            title="${archived ? 'Restore conversation' : 'Archive conversation'}">${icon('archive')}</button>
+    <button class="icon-btn" data-act="export" ${hasConversation ? '' : 'disabled'}
+            title="Export as Markdown">${icon('download')}</button>
+    <button class="icon-btn" data-act="delete" ${hasConversation ? '' : 'disabled'}
+            title="Delete conversation">${icon('trash')}</button>`;
+  container.querySelector('[data-act="pin"]').addEventListener('click', () => onPin?.());
+  container.querySelector('[data-act="archive"]').addEventListener('click', () => onArchive?.());
+  container.querySelector('[data-act="export"]').addEventListener('click', () => onExport?.());
+  container.querySelector('[data-act="delete"]').addEventListener('click', () => onDelete?.());
+}
+
+/* ----------------------------------------------------------- attachments */
+export function renderAttachments(container, items, { onRemove } = {}) {
+  if (!items.length) {
+    container.hidden = true;
+    container.innerHTML = '';
+    return;
+  }
+  container.hidden = false;
+  container.innerHTML = items.map((a) => `
+    <span class="attach-chip ${a.pending ? 'is-pending' : ''}">
+      ${icon('paperclip')}
+      <span class="attach-name">${esc(a.filename)}</span>
+      ${a.error ? `<span class="attach-error">${esc(a.error)}</span>` : ''}
+      <button type="button" class="mini-btn" data-remove="${esc(a.id || a.filename)}"
+              aria-label="Remove ${esc(a.filename)}">${icon('close')}</button>
+    </span>`).join('');
+  container.querySelectorAll('[data-remove]').forEach((el) => {
+    el.addEventListener('click', () => onRemove?.(el.dataset.remove));
+  });
+}
+
+/* -------------------------------------------------------------- projects */
+export function projectDialog({ project = null, onSave } = {}) {
+  const editing = Boolean(project);
+  const { root, close } = mountDialog(`
+    <div class="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <h2 id="modalTitle">${editing ? 'Edit project' : 'New project'}</h2>
+        <p>A project groups conversations and gives every one of them the same instructions.</p>
+        <label for="projName">Name</label>
+        <input id="projName" type="text" maxlength="80" autocomplete="off"
+               value="${editing ? esc(project.name) : ''}" placeholder="e.g. Thesis research" />
+        <label for="projDesc">Description (optional)</label>
+        <input id="projDesc" type="text" maxlength="200" autocomplete="off"
+               value="${editing ? esc(project.description || '') : ''}" placeholder="What this workspace is for" />
+        <label for="projInstr">Instructions for Tolesh</label>
+        <textarea id="projInstr" rows="4" placeholder="e.g. Answer with sources. Keep replies under 200 words.">${editing ? esc(project.instructions || '') : ''}</textarea>
+        <div class="modal-actions">
+          <button class="btn" data-cancel>Cancel</button>
+          <button class="btn btn-primary" data-save>${editing ? 'Save' : 'Create'}</button>
+        </div>
+      </div>
+    </div>`);
+  root.querySelector('[data-cancel]').addEventListener('click', close);
+  root.querySelector('[data-save]').addEventListener('click', () => {
+    const name = root.querySelector('#projName').value.trim();
+    if (!name) { toast('A project needs a name.', 'error'); return; }
+    const payload = {
+      name,
+      description: root.querySelector('#projDesc').value.trim(),
+      instructions: root.querySelector('#projInstr').value.trim(),
+    };
+    close();
+    onSave?.(payload);
+  });
+  root.querySelector('#projName').focus();
+}
+
+export function pickProjectDialog({ projects = [], current = null, onPick } = {}) {
+  const rows = [
+    `<button class="pick-row ${!current ? 'is-active' : ''}" data-pick="">
+       <span>No project</span><span class="pick-note">unfiled</span></button>`,
+    ...projects.map((p) => `
+      <button class="pick-row ${p.id === current ? 'is-active' : ''}" data-pick="${esc(p.id)}">
+        <span>${esc(p.name)}</span>
+        <span class="pick-note">${p.conversation_count || 0} chats</span></button>`),
+  ].join('');
+  const { root, close } = mountDialog(`
+    <div class="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <h2 id="modalTitle">Move to project</h2>
+        <div class="pick-list">${rows}</div>
+        <div class="modal-actions"><button class="btn" data-cancel>Cancel</button></div>
+      </div>
+    </div>`);
+  root.querySelector('[data-cancel]').addEventListener('click', close);
+  root.querySelectorAll('[data-pick]').forEach((el) => {
+    el.addEventListener('click', () => { close(); onPick?.(el.dataset.pick || null); });
+  });
+}

@@ -26,6 +26,14 @@ const state = {
   abort: null,
   health: null,            // last /api/health payload, reused for re-renders
   route: [],               // the fallback chain, in the order it is tried
+  conversations: [],       // history list, newest first (pinned on top)
+  projects: [],
+  projectFilter: 'all',    // 'all' | 'unfiled' | <project id>
+  historyQuery: '',
+  showArchived: false,
+  attachments: [],         // uploaded files attached to the next message
+  webSearch: false,        // opt-in per message, never silent
+  conversationMeta: null,  // the open conversation, even when a filter hides it
 };
 
 const SUGGESTIONS = [
@@ -129,6 +137,7 @@ async function boot() {
 function newConversation() {
   if (state.streaming && state.abort) state.abort.abort();
   state.conversationId = null;
+  state.conversationMeta = null;
   state.titled = false;
   state.streaming = false;
   $('messages').innerHTML = '';
@@ -139,6 +148,9 @@ function newConversation() {
   setStatus('');
   $('input').value = '';
   $('input').focus();
+  state.attachments = [];
+  renderAttachments();
+  renderConversationHeader();
   restCoreState();
 }
 
@@ -167,6 +179,7 @@ async function refreshAll() {
 
     renderAll(health);
     restCoreState();
+    await loadHistory();
   } catch (err) {
     state.online = false;
     setConnection(false);
@@ -425,6 +438,7 @@ async function send(text) {
   let buffer = '';
   let usedModel = null;
   state.fellBack = false;
+  state.webFailed = false;
   state.lastProviderError = null;
   const controller = new AbortController();
   state.abort = controller;
@@ -457,6 +471,15 @@ async function send(text) {
         }
         else if (d.kind === 'retry') setStatus(`Retrying in ${d.delay_ms}ms…`);
         else if (d.kind === 'fallback') setStatus(`Falling back to ${modelLabel(d.to)}…`);
+        else if (d.kind === 'web_fetch') setStatus(`Reading ${String(d.url).slice(0, 60)}…`);
+        else if (d.kind === 'web_search') setStatus(`Searching the web for “${String(d.query).slice(0, 50)}”…`);
+        else if (d.kind === 'web_ok') setStatus(`Read ${d.title || d.url} (${d.chars} chars).`);
+        else if (d.kind === 'web_error') {
+          // The message still gets answered from what is left; say what failed
+          // instead of silently answering as if the web had been consulted.
+          state.webFailed = true;
+          setStatus(`Web unavailable: ${String(d.message || '').slice(0, 110)}`);
+        }
         break;
       }
       case 'token':
@@ -493,11 +516,21 @@ async function send(text) {
   };
 
   try {
+    const ready = state.attachments
+      .filter((a) => a.id && !a.pending && !a.error)
+      .map((a) => a.id);
+    // URLs typed in the message are only read when the user switched web on:
+    // fetching a link is a network action, not a rendering detail.
+    const urls = state.webSearch ? (t.match(/https?:\/\/[^\s<>"')]+/g) || []).slice(0, 3) : [];
     await api.chatStream({
       message: t,
       conversation_id: state.conversationId,
       model: state.model,
       task: state.task,
+      attachment_ids: ready,
+      web_search: state.webSearch,
+      web_urls: urls,
+      project_id: targetProjectId(),
     }, onEvent, controller.signal);
   } catch (err) {
     if (err.name !== 'AbortError') {
@@ -505,9 +538,10 @@ async function send(text) {
       botEl.classList.add('is-error');
     }
   } finally {
-    ui.finishMessage(botEl, usedModel
+    const tag = usedModel
       ? `${modelLabel(usedModel)}${state.fellBack ? ' · fallback' : ''}`
-      : '');
+      : '';
+    ui.finishMessage(botEl, state.webFailed ? `${tag}${tag ? ' · ' : ''}web failed` : tag);
     state.streaming = false;
     state.abort = null;
     $('sendBtn').disabled = false;
@@ -515,6 +549,10 @@ async function send(text) {
     setStatus('');
     scrollToBottom();
     restCoreState();
+    // The files were used for this turn; the uploads stay on disk with the
+    // conversation but the composer starts clean.
+    state.attachments = [];
+    renderAttachments();
     if (voice.active && buffer) {
       voice.speak(buffer, {
         onStart: () => setCoreState('speaking'),
@@ -522,7 +560,234 @@ async function send(text) {
       });
     }
     await silentRefresh();
+    await loadHistory();
   }
+}
+
+/* -------------------------------------------------- history and projects */
+function currentConversation() {
+  if (!state.conversationId) return null;
+  const found = state.conversations.find((c) => c.id === state.conversationId);
+  if (found) { state.conversationMeta = found; return found; }
+  // A search or project filter can hide the open conversation from the list;
+  // the header still has to describe the conversation that is actually open.
+  return state.conversationMeta?.id === state.conversationId
+    ? state.conversationMeta : null;
+}
+
+/** The project a new message belongs to: the conversation's own project when
+ *  one is open, otherwise whatever the history filter is set to. */
+function targetProjectId() {
+  const conv = currentConversation();
+  if (conv) return conv.project_id || null;
+  return (state.projectFilter !== 'all' && state.projectFilter !== 'unfiled')
+    ? state.projectFilter : null;
+}
+
+async function loadHistory() {
+  if (!state.online) return;
+  const params = new URLSearchParams();
+  if (state.historyQuery.trim()) params.set('q', state.historyQuery.trim());
+  if (state.showArchived) params.set('include_archived', 'true');
+  if (state.projectFilter === 'unfiled') params.set('unfiled', 'true');
+  else if (state.projectFilter !== 'all') params.set('project_id', state.projectFilter);
+  try {
+    const [list, projects] = await Promise.all([
+      api.get(`/api/conversations${params.toString() ? `?${params}` : ''}`),
+      api.get('/api/projects'),
+    ]);
+    state.conversations = list.conversations || [];
+    state.projects = projects.projects || [];
+    const open = state.conversations.find((c) => c.id === state.conversationId);
+    if (open) state.conversationMeta = open;
+  } catch (err) {
+    // A history failure must not look like a chat failure; say what broke.
+    setStatus(`Could not load history: ${err.message}`);
+    return;
+  }
+  renderHistoryPanel();
+}
+
+function renderHistoryPanel() {
+  ui.renderProjectChips($('projectChips'), {
+    projects: state.projects,
+    filter: state.projectFilter,
+    onSelect: (id) => { state.projectFilter = id; loadHistory(); },
+  });
+  ui.renderHistory($('historyList'), {
+    conversations: state.conversations,
+    activeId: state.conversationId,
+    query: state.historyQuery,
+    archived: state.showArchived,
+    onOpen: openConversation,
+    onPin: (id, pinned) => flagConversation(id, { pinned }),
+    onArchive: (id, archived) => flagConversation(id, { archived }),
+    onExport: exportConversation,
+    onDelete: confirmDeleteConversation,
+  });
+  renderConversationHeader();
+}
+
+function renderConversationHeader() {
+  const conv = currentConversation();
+  if (conv) $('convTitle').textContent = conv.title;
+  const projectId = targetProjectId();
+  const project = projectId ? state.projects.find((p) => p.id === projectId) : null;
+  $('projectChipName').textContent = project ? project.name : 'No project';
+  $('projectChip').classList.toggle('is-set', Boolean(project));
+  ui.renderConversationActions($('conversationActions'), {
+    hasConversation: Boolean(state.conversationId),
+    pinned: Boolean(conv?.pinned),
+    archived: Boolean(conv?.archived),
+    onPin: () => state.conversationId
+      && flagConversation(state.conversationId, { pinned: !conv?.pinned }),
+    onArchive: () => state.conversationId
+      && flagConversation(state.conversationId, { archived: !conv?.archived }),
+    onExport: () => state.conversationId && exportConversation(state.conversationId),
+    onDelete: () => state.conversationId && confirmDeleteConversation(state.conversationId),
+  });
+}
+
+async function openConversation(id) {
+  if (!id) return;
+  if (state.streaming && state.abort) state.abort.abort();
+  try {
+    const [data, meta] = await Promise.all([
+      api.get(`/api/conversations/${encodeURIComponent(id)}/messages`),
+      api.get(`/api/conversations/${encodeURIComponent(id)}`),
+    ]);
+    state.conversationId = id;
+    state.conversationMeta = meta.conversation;
+    state.titled = true;
+    state.attachments = [];
+    renderAttachments();
+    $('messages').innerHTML = '';
+    $('emptyState').style.display = (data.messages || []).length ? 'none' : '';
+    for (const m of data.messages || []) {
+      const el = ui.createMessage(m.role === 'user' ? 'user' : 'assistant', m.content);
+      $('messages').appendChild(el);
+      if (m.role !== 'user') ui.finishMessage(el, m.model ? modelLabel(m.model) : '');
+    }
+    scrollToBottom();
+    renderHistoryPanel();
+    if (window.innerWidth <= 980) openContext(false);
+    $('input').focus();
+  } catch (err) {
+    ui.toast(`Could not open that conversation: ${err.message}`, 'error');
+  }
+}
+
+async function flagConversation(id, patch) {
+  try {
+    const res = await api.patch(`/api/conversations/${encodeURIComponent(id)}/flags`, patch);
+    if (state.conversationId === id && res.conversation) state.conversationMeta = res.conversation;
+    await loadHistory();
+    const what = patch.pinned !== undefined ? (patch.pinned ? 'Pinned' : 'Unpinned')
+      : patch.archived !== undefined ? (patch.archived ? 'Archived' : 'Restored')
+        : 'Moved';
+    ui.toast(`${what}.`, 'ok');
+  } catch (err) { ui.toast(err.message, 'error'); }
+}
+
+async function exportConversation(id) {
+  try {
+    const name = await api.download(`/api/conversations/${encodeURIComponent(id)}/export`);
+    ui.toast(`Exported ${name}`, 'ok');
+  } catch (err) { ui.toast(`Export failed: ${err.message}`, 'error'); }
+}
+
+function confirmDeleteConversation(id) {
+  const conv = state.conversations.find((c) => c.id === id);
+  ui.confirmDialog({
+    title: 'Delete conversation',
+    body: `“${conv?.title || 'This conversation'}” and its messages will be removed. `
+      + 'This cannot be undone.',
+    confirmLabel: 'Delete',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        await api.del(`/api/conversations/${encodeURIComponent(id)}`);
+        if (state.conversationId === id) newConversation();
+        await loadHistory();
+        ui.toast('Conversation deleted.', 'ok');
+      } catch (err) { ui.toast(err.message, 'error'); }
+    },
+  });
+}
+
+function newProject() {
+  ui.projectDialog({
+    onSave: async (payload) => {
+      try {
+        const created = await api.post('/api/projects', payload);
+        // Deliberately not switching the filter: doing so would hide every
+        // conversation that is not in the new project, including the open one.
+        ui.toast(`Project “${created.project.name}” created.`, 'ok');
+        await loadHistory();
+      } catch (err) { ui.toast(err.message, 'error'); }
+    },
+  });
+}
+
+function chooseProject() {
+  const conv = currentConversation();
+  ui.pickProjectDialog({
+    projects: state.projects,
+    current: targetProjectId(),
+    onPick: async (pid) => {
+      if (conv) {
+        await flagConversation(conv.id, pid ? { project_id: pid } : { clear_project: true });
+      } else {
+        state.projectFilter = pid || 'all';
+        renderHistoryPanel();
+        ui.toast(pid ? 'New messages will be filed in that project.' : 'New messages are unfiled.', 'ok');
+      }
+    },
+  });
+}
+
+/* ------------------------------------------------------------ attachments */
+function renderAttachments() {
+  ui.renderAttachments($('attachmentChips'), state.attachments, { onRemove: removeAttachment });
+  syncComposerHeight();
+}
+
+async function attachFiles(files) {
+  for (const file of files) {
+    const key = `pending-${file.name}-${Date.now()}`;
+    state.attachments.push({ id: key, filename: file.name, pending: true });
+    renderAttachments();
+    try {
+      const res = await api.uploadFile(file);
+      const at = state.attachments.findIndex((a) => a.id === key);
+      if (at >= 0) state.attachments[at] = res.attachment;
+    } catch (err) {
+      const at = state.attachments.findIndex((a) => a.id === key);
+      if (at >= 0) state.attachments[at] = { id: key, filename: file.name, error: err.message };
+    }
+    renderAttachments();
+  }
+}
+
+async function removeAttachment(key) {
+  const item = state.attachments.find((a) => (a.id || a.filename) === key);
+  state.attachments = state.attachments.filter((a) => (a.id || a.filename) !== key);
+  renderAttachments();
+  if (item && !item.pending && !item.error && item.id) {
+    // Deleting the upload keeps the file list honest: an attachment the user
+    // removed should not still sit on disk.
+    api.del(`/api/attachments/${encodeURIComponent(item.id)}`).catch(() => {});
+  }
+}
+
+function toggleWebSearch() {
+  state.webSearch = !state.webSearch;
+  const btn = $('webBtn');
+  btn.classList.toggle('is-active', state.webSearch);
+  btn.setAttribute('aria-pressed', String(state.webSearch));
+  setStatus(state.webSearch
+    ? 'Web search is on for the next message.'
+    : '');
 }
 
 /* -------------------------------------------------------------- actions */
@@ -630,6 +895,31 @@ function bindEvents() {
   $('forgetBtn').addEventListener('click', forgetEverything);
   $('resetOrderBtn').addEventListener('click', resetRoute);
 
+  // ---- history, projects, attachments, web
+  $('newProjectBtn').addEventListener('click', newProject);
+  $('projectChip').addEventListener('click', chooseProject);
+  $('archivedToggle').addEventListener('click', () => {
+    state.showArchived = !state.showArchived;
+    const btn = $('archivedToggle');
+    btn.setAttribute('aria-pressed', String(state.showArchived));
+    btn.textContent = state.showArchived ? 'Hide archived' : 'Show archived';
+    loadHistory();
+  });
+  let searchTimer = null;
+  $('historySearch').addEventListener('input', (e) => {
+    state.historyQuery = e.target.value;
+    // Debounced: typing a title should not fire one query per keystroke.
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadHistory, 220);
+  });
+  $('attachBtn').addEventListener('click', () => $('fileInput').click());
+  $('fileInput').addEventListener('change', async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';                       // allow re-picking the same file
+    if (files.length) await attachFiles(files);
+  });
+  $('webBtn').addEventListener('click', toggleWebSearch);
+
   document.querySelectorAll('.rail-item').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.rail-item').forEach((b) => {
@@ -641,7 +931,7 @@ function bindEvents() {
       syncViewUrl(view);
       if (view === 'chat') { $('input').focus(); return; }
       openContext(true);
-      const map = { memory: 'h-memory', tools: 'h-tools', settings: 'h-providers' };
+      const map = { chats: 'h-history', memory: 'h-memory', tools: 'h-tools', settings: 'h-providers' };
       const target = $(map[view]);
       if (target) target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
     });

@@ -57,17 +57,24 @@ def connect(path: str | Path) -> sqlite3.Connection:
 
     Parent directories are created for file-backed databases so a fresh
     install works without a manual ``mkdir``.
+
+    ``file:`` URIs are passed through with ``uri=True``. That is how several
+    stores share one in-memory database: plain ``":memory:"`` gives every
+    connection its own empty database, so a second store would not see the
+    first one's tables.
     """
     target = str(path)
-    if target != ":memory:":
+    is_uri = target.startswith("file:")
+    if not is_uri and target != ":memory:":
         Path(target).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(
         target,
+        uri=is_uri,
         check_same_thread=False,
         timeout=BUSY_TIMEOUT_MS / 1000,
     )
-    if target != ":memory:":
+    if not is_uri and target != ":memory:":
         try:
             # WAL is persistent once set on the file, but re-issuing it is
             # harmless and covers databases created before this helper.
