@@ -290,44 +290,60 @@ Rebuilt site output now generates:
 https://github.com/toluenetech-spec/Tolesh-AI/blob/main/LICENSE
 ```
 
-**Status: destination corrected and confirmed; the licence link itself is still
-404 and is NOT claimed fixed.** The blob 404 is now caused by exactly one
-remaining fact — the local commits have not been pushed. Pushing requires
-credentials that are not present in this environment:
+**Status: pushed and re-verified (2026-11-10, later still).** The push was
+originally blocked because this environment held no write credential — the
+CodeBuddy GitHub connector token is an integration token with no `Contents:
+write` permission, which was proven, not assumed:
 
 ```
 $ git push -u origin main
 fatal: could not read Username for 'https://github.com': terminal prompts disabled
+
+$ curl -X POST .../git/refs -d '{"ref":"refs/heads/push-probe", ...}'
+403 Resource not accessible by integration
 ```
 
-The local branch was renamed `master` → `main` and the remote's
-`da34a41 Initial commit` was merged (`--allow-unrelated-histories`, README kept
-from this tree), so the push is now a plain fast-forward:
+The owner then supplied a personal access token, and the push landed as a plain
+fast-forward:
 
 ```
-da34a41 Initial commit            (origin/main)
-716a1ae Bootstrap Tolesh ...
-2fe5271 Unify the desktop app ...
-fd4d4f9 Merge remote initial commit; keep Tolesh README   (HEAD -> main)
+$ git push -u origin main
+   da34a41..f6512bc  main -> main
+branch 'main' set up to track 'origin/main'.
 ```
 
-Once pushed, `.../blob/main/LICENSE` resolves because `LICENSE` is committed at
-the repository root. That is a prediction, not a verification: it must be
-re-checked with `curl -o /dev/null -w '%{http_code}'` after the push, and this
-document should be updated with the real code at that time.
+Post-push verification, performed with real HTTP requests rather than assumed:
+
+| Check | Result |
+| --- | --- |
+| `git ls-remote --heads origin` | `f6512bc...  refs/heads/main` |
+| `raw.githubusercontent.com/.../main/LICENSE` | **200** |
+| `raw.githubusercontent.com/.../main/README.md` | **200** |
+| `raw.githubusercontent.com/.../main/ARCHITECTURE.md` | **200** |
+| `raw.githubusercontent.com/.../main/IMPLEMENTATION-REPORT.md` | **200** |
+| `GET /git/trees/main?recursive=1` | 793 entries, `truncated: false` |
+| Tree top level | `LICENSE`, `LICENSES/`, `ATTRIBUTION.md`, `src/`, `web/`, `tests/`, `docs/`, `scripts/`, `installer/`, `website/`, … |
+
+The earlier 404 on `.../blob/main/LICENSE` is therefore resolved, and this time
+it is claimed as fixed **because the status code was observed**, not because the
+file exists locally. `LICENSES/` and `ATTRIBUTION.md` shipped in the same commit,
+so the third-party notices the upstream licence requires are published alongside
+the source.
+
+What the push does **not** change: the repository is now publicly hosted, but the
+inherited **Jarvis AI Assistant License remains non-commercial**. Publishing
+source under an existing licence is not a grant of commercial rights, and no such
+rights are claimed here.
 
 ## 9. Outstanding / not done
 
-- **Public-site licence link is still broken (404)** — see §6d. The
-  destination is now the confirmed
-  `toluenetech-spec/Tolesh-AI` and the branch mismatch is gone (`main`), but the
-  blob is 404 because the commits are **not pushed**: this environment has no
-  GitHub credentials (`could not read Username for 'https://github.com'`).
-  **Not fixed and not claimed fixed** until a push lands and the URL is
-  re-verified with an actual HTTP status.
-- **Publishing is blocked on the owner** — the repository exists (HTTP 200) and
-  accepts a fast-forward from this working copy, but someone with credentials
-  must run `git push -u origin main`.
+- ~~**Public-site licence link is still broken (404)**~~ — **resolved**: see §6d.
+  The commits are pushed (`da34a41..f6512bc`), and `.../main/LICENSE` was
+  re-checked with `curl` and returned **200**. Fixed, and claimed fixed only
+  because the status code was observed.
+- ~~**Publishing is blocked on the owner**~~ — **resolved**: the owner supplied a
+  personal access token and `git push -u origin main` completed as a fast-forward;
+  `origin/main` is now `f6512bc` with 793 tree entries.
 - **The site itself is not deployed** — `barissencan.com/tolesh/` returns `404`
   for the four canonical URLs. All 5 external attribution / vocabulary links
   return `200`. GitHub was **not** rate limited (`remaining 53/60`).

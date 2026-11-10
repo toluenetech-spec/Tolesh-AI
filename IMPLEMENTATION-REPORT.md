@@ -263,13 +263,15 @@ the application exited. Evidence: `docs/desktop-launch-report.json`
   was obtained, no counsel review was performed, and Tolesh is **not** claimed
   to be commercially distributable. See
   [LICENSING-ASSESSMENT.md](LICENSING-ASSESSMENT.md).
-- The public site's "Read the licence" link resolves to a **404** at
-  `https://github.com/toluenetech-spec/Tolesh-AI/blob/main/LICENSE`. The
-  destination is now the confirmed repository (HTTP 200, default branch
-  `main`) and the branch mismatch is gone, but the blob is 404 because the
-  commits are **not pushed** — this environment has no GitHub credentials.
-  `site.json` no longer guesses. **Not claimed fixed.** See
-  [LICENSING-ASSESSMENT.md §6d](LICENSING-ASSESSMENT.md).
+- ~~The public site's "Read the licence" link resolves to a **404**~~ —
+  **resolved**: the commits are pushed (`da34a41..f6512bc`) and
+  `https://raw.githubusercontent.com/toluenetech-spec/Tolesh-AI/main/LICENSE`
+  was re-checked and returned **200** (`README.md`, `ARCHITECTURE.md`,
+  `IMPLEMENTATION-REPORT.md` also 200; remote tree = 793 entries). The push
+  initially failed because the only credential in this environment was a
+  read-only integration token (`403 Resource not accessible by integration`);
+  the owner supplied a personal access token and the fast-forward landed.
+  See [LICENSING-ASSESSMENT.md §6d](LICENSING-ASSESSMENT.md).
 - Live JEV / Gonka / Dahl provider endpoints were never called with real keys;
   only the offline provider and a local Ollama config were exercised.
 - The inherited native wake-word / VAD / Piper / Chatterbox pipeline was **not
