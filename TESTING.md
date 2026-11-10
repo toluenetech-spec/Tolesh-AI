@@ -261,8 +261,10 @@ Drives the workspace drawer in Chromium against the real API: opens all eight
 tabs, registers and connects a real stdio MCP server, runs a real agent, uploads
 a CSV and profiles and charts it, opens the chart at full size, schedules a
 task, saves and selects an assistant, flips a settings toggle and confirms the
-server agreed, checks the connector catalogue, measures horizontal overflow at
-320/375/768/1024/1440/1920 px, and verifies Escape and focus return. It writes
+server agreed, sets a temperature and proves it arrives in the `/api/chat`
+request body, checks the connector catalogue, measures horizontal overflow at
+320/375/768/1024/1440/1920 px, and verifies Escape and focus return. 25 checks,
+0 console errors. It writes
 [`docs/workspace-verification.json`](docs/workspace-verification.json) and 16
 screenshots to `docs/img/workspace/`, and exits non-zero on any failure.
 

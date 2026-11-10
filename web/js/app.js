@@ -414,6 +414,13 @@ function openProviderDialog(provider) {
 }
 
 /* ------------------------------------------------------------------- chat */
+function requestTemperature() {
+  const raw = localStorage.getItem('tolesh.temperature');
+  if (raw === null || raw === '') return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 && value <= 2 ? value : undefined;
+}
+
 async function send(text) {
   const t = (text || '').trim();
   if (!t || state.streaming) return;
@@ -536,6 +543,8 @@ async function send(text) {
       project_id: targetProjectId(),
       // Set by the workspace drawer when the user picks a saved assistant.
       assistant_id: window.__toleshAssistantId || undefined,
+      // Chosen in Workspace → Settings; absent means "the provider's default".
+      temperature: requestTemperature(),
     }, onEvent, controller.signal);
   } catch (err) {
     if (err.name !== 'AbortError') {

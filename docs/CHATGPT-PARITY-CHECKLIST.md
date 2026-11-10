@@ -52,6 +52,8 @@ unchanged.
 | **Message edit / regenerate** | ✅ | ✅ | ✅ | ✅ | ◐ (regenerate only) | ✅ |
 | **Sharing a conversation** | ✅ | ✅ | ✅ | ✅ | ✗ | ✅ opt-in, token, TTL, revocable, `noindex` |
 | **Settings surface** | ✅ | ✅ | ✅ | ✅ | ◐ (config file) | ✅ typed, validated, in-app |
+| **Model settings** | ◐ | ✅ (temperature, top_p, …) | ✅ | ✅ | ✗ | ◐ temperature, sent with each message; no per-model presets |
+| **Skills / plugin packages** | ✅ (GPTs) | ✅ (skills) | ✅ (tools) | ✅ (marketplace) | ✗ | ⛔ see below — assistants + MCP cover the use without installing third-party code |
 | **Data export / deletion** | ✅ | ◐ | ◐ | ◐ | ✗ | ✅ zip export, exact-phrase deletion |
 | **Audit log** | ◐ | ◐ | ◐ | ◐ | ✗ | ✅ gate + MCP + agents + jobs, one view |
 | Multi-user / RBAC | ✅ | ✅ | ✅ | ✅ | ✗ | ⛔ by policy |
@@ -244,6 +246,7 @@ unchanged.
 | MCP OAuth / dynamic client registration | The specification is still moving. A static bearer token works today and is documented. |
 | Sub-agents and parallel tool calls | A different runtime, not a switch. The loop is honest about being sequential. |
 | Cron expressions | `once` + `interval` covers the real use; a cron parser is a dependency and a source of silent mistakes. |
+| A skill/plugin package format | LobeChat and Open WebUI install third-party tool packages that run in-process. Tolesh's equivalent is an MCP server — a separate process with its own permissions — plus a saved assistant for the instructions. A package format would mean running downloaded code inside the server, which is a security decision this build does not make. |
 
 ## Known limitations, stated plainly
 
@@ -290,7 +293,7 @@ connector catalogue rather than assumed present.
 | Media | fake provider for image and audio; explicit 503 with a reason when unconfigured |
 | Jobs | deterministic ticks, persistence across restart, notifications, progress separate from result |
 | Privacy | zip export contents, exact-phrase deletion, sharing off by default, edit/branch/regenerate |
-| Browser (Chromium, `scripts/verify_workspace_ui.py`) | **23/23 checks, 0 console errors**: 8 tabs, live MCP connect + tool list, live agent run, CSV upload → profile → chart, full-size chart viewer, task scheduling, assistant creation and selection, settings persistence, connector catalogue, no horizontal overflow at 320/375/768/1024/1440/1920 px, Escape and focus return |
+| Browser (Chromium, `scripts/verify_workspace_ui.py`) | **25/25 checks, 0 console errors**: 8 tabs, live MCP connect + tool list, live agent run, CSV upload → profile → chart, full-size chart viewer, task scheduling, assistant creation and selection, settings persistence, temperature carried on the wire, connector catalogue, no horizontal overflow at 320/375/768/1024/1440/1920 px, Escape and focus return |
 
 Reproduce the browser run:
 

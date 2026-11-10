@@ -1233,6 +1233,27 @@ async function renderSettings() {
   }
   host.appendChild(toggles);
 
+  const sampling = h(`<div><h3>Response</h3>
+    <label class="ws-field" style="max-width:12rem"><span>Temperature</span>
+      <input type="number" id="wsTemp" min="0" max="2" step="0.1"
+             value="${esc(localStorage.getItem('tolesh.temperature') || '')}"
+             placeholder="provider default"></label>
+    <p class="ws-card-sub">Sent with every message. 0 is as deterministic as the
+      model gets; 1 is the usual default. Empty means "leave it to the provider".</p></div>`);
+  sampling.querySelector('#wsTemp').addEventListener('change', (event) => {
+    const raw = event.target.value.trim();
+    const value = Number(raw);
+    if (raw === '' || !Number.isFinite(value) || value < 0 || value > 2) {
+      localStorage.removeItem('tolesh.temperature');
+      event.target.value = '';
+      toast('Using the provider default.', 'info');
+      return;
+    }
+    localStorage.setItem('tolesh.temperature', String(value));
+    toast(`Temperature set to ${value}.`, 'success');
+  });
+  host.appendChild(sampling);
+
   const numbers = h(`<div><h3>Limits</h3>
     <div class="ws-row">
       <label class="ws-field"><span>Agent steps</span>

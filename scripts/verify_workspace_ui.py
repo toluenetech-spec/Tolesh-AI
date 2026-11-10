@@ -310,6 +310,13 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
         stored = json.loads(r.read().decode("utf-8"))["values"]["memory_enabled"]
     check["settings_persist"] = before != after and stored == after
     check["telemetry_locked"] = page.is_disabled('.ws-toggle input[data-key="telemetry"]')
+
+    # The temperature chosen here must reach the request the chat sends.
+    page.fill("#wsTemp", "0.3")
+    page.dispatch_event("#wsTemp", "change")
+    page.wait_for_timeout(400)
+    check["temperature_saved"] = page.evaluate(
+        "() => localStorage.getItem('tolesh.temperature')") == "0.3"
     shot("settings")
 
     # Connections: the provider catalogue must list all six.
@@ -320,6 +327,30 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
         name in text for name in ["GitHub", "Google Drive", "Gmail",
                                   "Google Calendar", "Notion", "Slack"]
     )
+
+    # A real message, to prove the setting is carried on the wire.
+    captured: dict = {}
+
+    def capture(request):
+        if request.method == "POST" and request.url.endswith("/api/chat"):
+            try:
+                captured["body"] = json.loads(request.post_data or "{}")
+            except Exception:  # noqa: BLE001 - a malformed body is recorded as empty
+                captured["body"] = {}
+
+    page.on("request", capture)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    page.fill("#input", "Say ok and nothing else.")
+    page.click("#sendBtn")
+    page.wait_for_timeout(3000)
+    body = captured.get("body") or {}
+    check["temperature_in_request"] = body.get("temperature") == 0.3
+    report["chat_request"] = {k: body.get(k) for k in
+                              ("model", "task", "temperature", "assistant_id")}
+    # Reloading stops the stream and proves the app still boots cleanly.
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#workspaceRailBtn", timeout=15000)
 
     # --- layout --------------------------------------------------------------
     page.keyboard.press("Escape")

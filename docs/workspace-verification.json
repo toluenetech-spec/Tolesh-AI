@@ -1,5 +1,5 @@
 {
-  "url": "http://127.0.0.1:8793",
+  "url": "http://127.0.0.1:8795",
   "checks": {
     "rail_button_present": true,
     "drawer_opens": true,
@@ -20,7 +20,9 @@
     "assistant_sets_composer": true,
     "settings_persist": true,
     "telemetry_locked": true,
+    "temperature_saved": true,
     "connectors_catalogued": true,
+    "temperature_in_request": true,
     "no_horizontal_overflow": true,
     "escape_closes": true,
     "focus_returns": true
@@ -69,13 +71,19 @@
       "tokenharbor:glm-5.3-flash",
       "offline:tolesh-offline"
     ],
-    "database": "/tmp/tb6/data/tolesh/tolesh.db",
+    "database": "/tmp/tb8/data/tolesh/tolesh.db",
     "static_frontend": true,
-    "time": 1794328961.8703182
+    "time": 1794329297.2478733
   },
   "agent_run": {
     "state": "Done in 1 steps",
     "log": "\u2014 step 1 \u2014\nfinal: Hello! It's nice to meet you.\n"
+  },
+  "chat_request": {
+    "model": null,
+    "task": "chat",
+    "temperature": 0.3,
+    "assistant_id": "asst-464bc73282"
   },
   "passed": true
 }
