@@ -198,3 +198,11 @@ class ConnectorActionRun(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
     approval_id: str | None = None
     approval_token: str | None = None
+
+
+class AgentRunCreate(BaseModel):
+    """A task for the multi-step agent."""
+
+    goal: str = Field(..., min_length=1, max_length=8000)
+    model: str | None = Field(default=None, max_length=200)
+    conversation_id: str | None = Field(default=None, max_length=64)

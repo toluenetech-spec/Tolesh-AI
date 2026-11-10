@@ -15,14 +15,16 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from .schemas import (
-    ConnectorActionRun, ConnectorOAuthComplete, ConnectorOAuthStart,
-    ConnectorTokenCreate, MCPInvoke, MCPPromptRun, MCPServerPatch,
+    AgentRunCreate, ConnectorActionRun, ConnectorOAuthComplete,
+    ConnectorOAuthStart, ConnectorTokenCreate, MCPInvoke, MCPPromptRun,
+    MCPServerPatch,
 )
 
 
 def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_mcp(app, st)
     _register_connectors(app, st)
+    _register_agents(app, st)
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
@@ -328,3 +330,83 @@ p{{margin:0;line-height:1.5;color:#4a453f}}
 </style></head><body><div class="card"><h1>{title}</h1>
 <p>{message}</p><p style="margin-top:1rem">You can close this tab and return to Tolesh.</p>
 </div></body></html>"""
+
+
+# ------------------------------------------------------------------ agents
+def _register_agents(app: FastAPI, st: Any) -> None:
+    from fastapi.responses import StreamingResponse
+
+    from ..agents import build_registry
+
+    @app.get("/api/agents/tools")
+    def agent_tools() -> dict[str, Any]:
+        """The catalogue the loop will see, with risk and source attached."""
+        registry = build_registry(st.agent_context)
+        return {"tools": [t.as_dict() for t in registry.list()],
+                "count": len(registry.list())}
+
+    @app.post("/api/agents/runs")
+    def create_run(body: AgentRunCreate) -> dict[str, Any]:
+        try:
+            run = st.agents.create(body.goal, model=body.model,
+                                   conversation_id=body.conversation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"run": run}
+
+    @app.get("/api/agents/runs")
+    def list_runs(limit: int = 30) -> dict[str, Any]:
+        return {"runs": st.agent_history.list(limit=max(1, min(limit, 100)))}
+
+    @app.get("/api/agents/runs/{run_id}")
+    def get_run(run_id: str) -> dict[str, Any]:
+        run = st.agent_history.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Unknown run.")
+        return {"run": run, "messages": st.agent_history.messages(run_id)}
+
+    @app.delete("/api/agents/runs/{run_id}")
+    def delete_run(run_id: str) -> dict[str, Any]:
+        if not st.agent_history.delete(run_id):
+            raise HTTPException(status_code=404, detail="Unknown run.")
+        return {"status": "ok"}
+
+    @app.post("/api/agents/runs/{run_id}/cancel")
+    def cancel_run(run_id: str) -> dict[str, Any]:
+        if st.agent_history.get(run_id) is None:
+            raise HTTPException(status_code=404, detail="Unknown run.")
+        return st.agents.cancel(run_id)
+
+    def _stream(run_id: str) -> StreamingResponse:
+        if st.agent_history.get(run_id) is None:
+            raise HTTPException(status_code=404, detail="Unknown run.")
+        # The router can be swapped (tests, model changes); the runner must use
+        # the one this server is actually routing with.
+        st.agents.router = st.router
+
+        def gen():
+            for event in st.agents.stream(run_id, st.agent_context):
+                yield _sse(event.as_dict())
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
+
+    @app.post("/api/agents/runs/{run_id}/run")
+    def run_agent(run_id: str) -> StreamingResponse:
+        return _stream(run_id)
+
+    @app.post("/api/agents/runs/{run_id}/resume")
+    def resume_agent(run_id: str) -> StreamingResponse:
+        """Continue a run that parked on an approval.
+
+        The approval itself is granted through ``/api/permissions/{id}/approve``;
+        this endpoint only refuses if the approval is still missing.
+        """
+        return _stream(run_id)
+
+
+def _sse(payload: dict[str, Any]) -> str:
+    import json as _json
+
+    return "data: " + _json.dumps(payload, ensure_ascii=False) + "\n\n"

@@ -35,9 +35,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..agents import AgentHistory, AgentRunner, WorkspaceContext
 from ..ai import ModelRouter, Registry, UsageLedger, discover_models
 from ..codeexec import network_isolation_available, run_python
 from ..connectors import ConnectorManager, ConnectorStore
+from .. import codeexec, netsearch
 from ..conversation import ConversationManager
 from ..mcp_bridge import MCPManager, MCPServerStore
 from ..memory_ext import LayeredMemory
@@ -103,6 +105,14 @@ class AppState:
         # they live on AppState rather than being rebuilt per request.
         self.mcp = MCPManager(MCPServerStore(), gate=self.gate)
         self.connectors = ConnectorManager(ConnectorStore(db_path=path))
+        self.agent_history = AgentHistory(db_path=path)
+        self.agents = AgentRunner(self.router, self.agent_history, gate=self.gate)
+        # Tools reach their subsystems through this explicit context, which is
+        # also what lets a test swap one of them out.
+        self.agent_context = WorkspaceContext(
+            mcp=self.mcp, connectors=self.connectors, attachments=self.attachments,
+            conversations=self.conversations, codeexec=codeexec,
+            netsearch=netsearch)
         self.db_path = path
 
     def close(self) -> None:
@@ -112,7 +122,7 @@ class AppState:
             except Exception:
                 pass
         for obj in (self.ledger, self.memory, self.conversations, self.projects,
-                    self.attachments, self.gate):
+                    self.attachments, self.agent_history, self.gate):
             try:
                 obj.close()
             except Exception:
