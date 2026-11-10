@@ -132,3 +132,39 @@ class FallbackOrder(BaseModel):
     """
 
     models: list[str] = Field(default_factory=list, max_length=200)
+
+
+class MCPServerPatch(BaseModel):
+    """Create or partially update one MCP server.
+
+    ``env`` and ``headers`` accept masked values (``sk-***xyz``) that mean
+    "keep what is stored", so the UI can save a form without ever holding the
+    real secret.
+    """
+
+    name: str | None = Field(default=None, max_length=40)
+    transport: Literal["stdio", "http"] | None = None
+    command: str | None = Field(default=None, max_length=500)
+    args: list[str] | None = Field(default=None, max_length=100)
+    env: dict[str, str] | None = None
+    url: str | None = Field(default=None, max_length=2000)
+    headers: dict[str, str] | None = None
+    enabled: bool | None = None
+    timeout_sec: float | None = Field(default=None, ge=1, le=300)
+    default_policy: Literal["allow", "ask", "deny"] | None = None
+    tool_permissions: dict[str, str] | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class MCPInvoke(BaseModel):
+    server: str = Field(..., min_length=1, max_length=40)
+    tool: str = Field(..., min_length=1, max_length=200)
+    args: dict[str, Any] = Field(default_factory=dict)
+    approval_id: str | None = None
+    approval_token: str | None = None
+    reason: str = Field(default="", max_length=500)
+
+
+class MCPPromptRun(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=200)
+    arguments: dict[str, Any] = Field(default_factory=dict)

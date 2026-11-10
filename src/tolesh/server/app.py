@@ -38,6 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from ..ai import ModelRouter, Registry, UsageLedger, discover_models
 from ..codeexec import network_isolation_available, run_python
 from ..conversation import ConversationManager
+from ..mcp_bridge import MCPManager, MCPServerStore
 from ..memory_ext import LayeredMemory
 from ..netsearch import (FetchError, SearchUnavailable, configured_backends,
                          fetch_page, page_block, results_block, search)
@@ -97,9 +98,16 @@ class AppState:
         self.attachments = AttachmentStore(db_path=path, root=Path(root) if root else None)
         self.gate = PermissionGate(db_path=path)
         self.tools = ComputerTools(self.gate)
+        # MCP sessions are process-wide state (a server may own a browser), so
+        # they live on AppState rather than being rebuilt per request.
+        self.mcp = MCPManager(MCPServerStore(), gate=self.gate)
         self.db_path = path
 
     def close(self) -> None:
+        try:
+            self.mcp.close()
+        except Exception:
+            pass
         for obj in (self.ledger, self.memory, self.conversations, self.projects,
                     self.attachments, self.gate):
             try:
@@ -722,6 +730,10 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
         return st.tools.invoke(body.tool, body.args, reason=body.reason)
 
     # ---------------------------------------------------------- static web
+    from .routes_ext import register_extension_routes
+
+    register_extension_routes(app, st)
+
     if serve_static and web.is_dir():
         app.mount("/", StaticFiles(directory=str(web), html=True), name="web")
 

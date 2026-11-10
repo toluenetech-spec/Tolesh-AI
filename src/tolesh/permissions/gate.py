@@ -135,6 +135,23 @@ class PermissionGate:
     def approve(self, action_id: str, token: str) -> dict[str, Any]:
         return self.decide(action_id, token, True)
 
+    def status_of(self, action_id: str) -> dict[str, Any]:
+        """Read one action's state without changing it.
+
+        Needed because an approval and the action it authorises are two
+        separate requests: the second one must be able to see that the first
+        already succeeded instead of trying to approve the same action twice.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id,tool,args,risk,status,expires_at,reason FROM permissions WHERE id=?",
+                (action_id,),
+            ).fetchone()
+        if row is None:
+            return {"status": "unknown"}
+        return {"id": row[0], "tool": row[1], "args": _loads(row[2]), "risk": row[3],
+                "status": row[4], "expires_at": row[5], "reason": row[6]}
+
     def deny(self, action_id: str, token: str) -> dict[str, Any]:
         return self.decide(action_id, token, False)
 
