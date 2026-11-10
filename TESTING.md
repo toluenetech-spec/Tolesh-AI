@@ -27,8 +27,11 @@
 | Tolesh core unit | [`tests/test_tolesh_core.py`](tests/test_tolesh_core.py) | `pytest` | Registry/redaction, routing/fallback, offline provider + persona honesty, usage ledger, conversation window, layered memory, policy, permission gate, computer tools |
 | HTTP/SSE contract | [`tests/test_tolesh_server.py`](tests/test_tolesh_server.py) | `pytest` + `fastapi.testclient.TestClient` | `/api/*` JSON + SSE contract, redaction, token guard, conversations, memory, permissions, tools, static serving |
 | Desktop↔engine integration | [`tests/test_tolesh_integration.py`](tests/test_tolesh_integration.py) | `pytest` + real uvicorn on a loopback port | In-process backend lifecycle, persistent database, restart persistence, provider config on disk, tray start/stop, AI window |
-| Browser E2E | [`scripts/verify_web_ui.py`](scripts/verify_web_ui.py) | Playwright + Chromium | Desktop/mobile/reduced-motion rendering, streaming chat, keyboard and focus behaviour, zero JS errors |
-| Desktop launch | `/tmp/tolesh_desktop_launch_check.py` (harness) | `xvfb-run` + xcb + QtWebEngine | Real tray + real window + real engine, screenshot, shutdown, restart persistence |
+| Browser E2E | [`scripts/verify_web_ui.py`](scripts/verify_web_ui.py) | Playwright + Chromium | Desktop/mobile/reduced-motion rendering, streaming chat, core state machine, keyboard and focus behaviour, zero JS errors |
+| Responsive layout | [`scripts/capture_responsive.py`](scripts/capture_responsive.py) | Playwright + Chromium | Seven widths: overflow, sliced greeting, core decode, stacked vs. two columns |
+| Core states | [`scripts/capture_core_states.py`](scripts/capture_core_states.py) | Playwright + Chromium | idle / thinking / responding / idle / offline, transitions recorded |
+| Interface assets | [`tests/test_web_core_assets.py`](tests/test_web_core_assets.py) | `pytest` + Pillow | Asset integrity, no dead references, state/CSS parity, alpha extraction |
+| Desktop launch | [`scripts/verify_desktop_launch.py`](scripts/verify_desktop_launch.py) | `xvfb-run` + xcb + QtWebEngine | Real tray + real window + real engine, JavaScript probe inside QtWebEngine, screenshot, shutdown, restart persistence |
 | Desktop Qt | `tests/test_wizard_layout.py`, `tests/test_updater.py`, … | `pytest` under `xvfb-run` | Wizard layout and updater installers on a headless X server |
 | Accessibility | browser E2E subset + [ACCESSIBILITY.md](ACCESSIBILITY.md) | Playwright | Skip link, focus trap, listbox keyboard nav, reduced motion, live regions |
 | Performance | `tests/performance/` | `pytest -m performance` | Deselected by default (`pytest.ini` sets `-m "not performance"`) |
@@ -142,13 +145,45 @@ a real loopback port and talks to it over HTTP.
 ### `scripts/verify_web_ui.py`
 
 Drives real Chromium against the running server. Collects `console.error` and
-`pageerror`, then asserts: skip link, main focus target, listbox opened by
-keyboard / closed by Escape, dialog opened / focus trapped / closed by Escape,
-a real streamed reply, `?view=` URL state surviving reload, mobile drawer
-collapsed by default, and reduced-motion behaviour. Any collected error fails
-the run. The streamed-reply wait is 60 s because a busy gateway can queue the
-preferred model, retry, and answer from a sibling model; the check still
-requires a genuine streamed reply, never a cached one.
+`pageerror`, then asserts: skip link, main focus target, the particle core's
+assets decoding (`naturalWidth`, not "the element exists"), the core reporting
+`idle → thinking → idle` around a real request, listbox opened by keyboard /
+closed by Escape, dialog opened / focus trapped / closed by Escape, a real
+streamed reply, `?view=` URL state surviving reload, mobile drawer collapsed by
+default, and reduced-motion behaviour. Any collected error fails the run. The
+streamed-reply wait is 60 s because a busy gateway can queue the preferred model,
+retry, and answer from a sibling model; the check still requires a genuine
+streamed reply, never a cached one.
+
+### `scripts/capture_responsive.py`
+
+Screenshots seven widths (320, 390, 768, 1024, 1280, 1440, 1920) and measures
+what a media-query review cannot: horizontal overflow on the document *and* on
+the fixed rail, whether the greeting is sliced by the fixed composer on first
+paint, whether the core image actually decoded, and how the hero is laid out
+(stacked vs. two columns). Results go to `docs/responsive-report.json`; any
+regression makes the script exit non-zero.
+
+### `scripts/capture_core_states.py`
+
+Captures the core in each state it can genuinely reach — `idle`, `thinking`,
+`responding` (from the real stream), `idle` after the reply, and `offline` by
+aborting every `/api` request at the network layer. A `MutationObserver` records
+the transitions so a state shorter than a polling interval cannot be missed, and
+screenshots from an earlier run are deleted first so a skipped state cannot
+inherit a stale image.
+
+### `tests/test_web_core_assets.py` — 10 tests
+
+The binary asset and the markup that points at it. Asserts the WebP files decode
+with a transparent background and an opaque highlight, that the metadata matches
+the bytes on disk, that **every** `src`/`href` in `index.html` and every
+`url(...)` in the CSS resolves to a real file, that the `<img>` declares its
+intrinsic size and has `alt=""`, that every state in `motion.js` has styling in
+`app.css`, and that the alpha-extraction maths works on a synthetic image
+(including refusing a non-uniform backdrop). The build script is not re-run here:
+its output depends on the local libwebp version, so a byte comparison would fail
+for reasons unrelated to the product.
 
 ### `tests/test_tolesh_dahl_provider.py` — 16 tests
 
@@ -205,7 +240,13 @@ Screenshots: `docs/img/tolesh-verify-desktop.png`,
 The browser check above proves the *web* surface. It does not prove the
 desktop application. This run does: `ToleshSystemTray` is constructed for
 real, `start_ai_backend()` boots uvicorn in-process, `show_ai_window()` loads
-`web/` into QtWebEngine, and `cleanup_on_exit()` shuts it all down.
+`web/` into QtWebEngine, `cleanup_on_exit()` shuts it all down, and then a
+**fresh process** reopens the database.
+
+It also asks QtWebEngine itself what it rendered
+(`page().runJavaScript(...)`), because the interface now depends on container
+queries, `cqw` units and WebP alpha — a Playwright run against Chromium says
+nothing about whether Qt's Chromium build has them.
 
 Command (Xvfb provides the X server; the machine has no physical display):
 
@@ -215,27 +256,29 @@ TOLESH_DATA_DIR=/tmp/tolesh-launch-data \
 TOLESH_CONFIG_PATH=/tmp/tolesh-launch-data/config.json \
 TOLESH_PROVIDERS_PATH=/tmp/tolesh-launch-data/providers.json \
 PYTHONPATH=src xvfb-run -a -s "-screen 0 1440x900x24" \
-  python3.11 /tmp/tolesh_desktop_launch_check.py /tmp/tolesh-launch
+  python3.11 scripts/verify_desktop_launch.py --out /tmp/tolesh-launch
 ```
 
 | Step | Observed |
 | --- | --- |
 | Qt platform | `xcb` (real X11 plugin, not `offscreen`) |
-| Backend | started in-process on `127.0.0.1:43571` |
-| `/api/health` | `status: ok`, `product: Tolesh`, providers `["offline","ollama"]` |
-| `/api/chat/sync` | reply from `offline:tolesh-offline`, conversation id returned |
-| AI window | `has_web_view: true`, URL `http://127.0.0.1:43571/` |
+| Backend | started in-process on an ephemeral loopback port (`35125` on the last run) |
+| `/api/health` | `status: ok`, `product: Tolesh`, providers `["offline","ollama","dahl"]` |
+| AI window | `has_web_view: true`, URL `http://127.0.0.1:<port>/` |
 | QtWebEngine load | `loadFinished(true)` |
-| Screenshot | 565 KB, `docs/img/tolesh-desktop-integrated.png` |
+| Core inside QtWebEngine | `coreLoaded: true`, `orbLoaded: true`, `coreWidth: 267`, `coreNatural: 300` (i.e. `srcset` + `sizes` selected and density-corrected the 512 w candidate) |
+| Layout inside QtWebEngine | `columns: side-by-side`, `overflow: 0` |
+| Core state | `state: "idle"`, `label: "Ready"` |
+| Screenshot | 654 KB, `docs/img/tolesh-desktop-integrated.png` |
 | Cleanup | `server.is_running == False` after `cleanup_on_exit()` |
-| Persistence after exit | memory marker present, 1 conversation, read back by a fresh server |
+| Persistence after exit | memory marker present, 23 conversations, read back by a fresh server |
 
 Full machine-readable record: `docs/desktop-launch-report.json`
 (`"ok": true`).
 
 The screenshot shows the real product: engine **ONLINE**, version `0.1.0`,
-2 providers ready, default model `auto`, the memory item written through the
-API before the window opened, and the composer/voice controls.
+providers ready, the default model, the particle core with its `READY` caption,
+the memory items written through the API, and the composer/voice controls.
 
 **Not** verified by this run: system-tray interaction (Xvfb has no tray host,
 so `isSystemTrayAvailable()` is `false`), a physical microphone/speaker, and a

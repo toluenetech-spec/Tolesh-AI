@@ -105,8 +105,8 @@ export class VoiceController {
     if (this.active) this.stop(); else this.start();
   }
 
-  speak(text) {
-    if (!this.speakOnReply || !this.ttsSupported || !text) return;
+  speak(text, { onStart, onEnd } = {}) {
+    if (!this.speakOnReply || !this.ttsSupported || !text) return false;
     const plain = String(text).replace(/[`*_#]/g, '').slice(0, 1200);
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(plain);
@@ -114,7 +114,13 @@ export class VoiceController {
     u.rate = 0.98;
     u.pitch = 0.92;
     u.volume = 1;
+    // Reported from the synthesiser itself, so a caller that shows "Speaking"
+    // is showing audio that exists, not audio that was requested.
+    u.onstart = () => { if (typeof onStart === 'function') onStart(); };
+    u.onend = () => { if (typeof onEnd === 'function') onEnd(); };
+    u.onerror = () => { if (typeof onEnd === 'function') onEnd(); };
     window.speechSynthesis.speak(u);
+    return true;
   }
 
   stopSpeaking() {

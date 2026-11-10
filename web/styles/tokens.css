@@ -35,6 +35,14 @@
   --indigo: oklch(0.335 0.070 265);
   --indigo-soft: oklch(0.335 0.070 265 / 0.22);
 
+  /* The assistant's core: the supplied particle artwork is cyan, and that cold
+     light against the warm ink is the point — computation inside a lit room,
+     not a second accent colour competing with the brass. */
+  --core: oklch(0.82 0.132 216);
+  --core-soft: oklch(0.82 0.132 216 / 0.30);
+  --core-faint: oklch(0.82 0.132 216 / 0.13);
+  --core-glow: oklch(0.72 0.130 224 / 0.20);
+
   /* Semantic */
   --ok: oklch(0.76 0.135 150);
   --warn: oklch(0.80 0.135 78);

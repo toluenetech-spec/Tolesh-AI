@@ -66,7 +66,8 @@ Responsive breakpoints in `app.css`: `1180px`, `980px`, `680px`, plus the
 | --- | --- | --- |
 | Shell | `.app-shell`, `.rail`, `.main`, `.topbar`, `.context` | `.context-collapsed` |
 | Navigation | `.brand`, `.brand-mark`, `.brand-word`, `.rail-nav`, `.rail-item`, `.rail-label`, `.mobile-nav` | `.is-active` |
-| Voice | `.voice-orb`, `.orb-ring`, `.orb-caption`, `.connection`, `.connection-dot` | `.is-listening`, `.is-online`, `.is-offline` |
+| Voice | `.voice-orb`, `.orb-art`, `.orb-halo`, `.orb-mic`, `.orb-ring`, `.orb-caption`, `.connection`, `.connection-dot` | `.is-listening`, `.is-online`, `.is-offline` |
+| Core | `.core-stage`, `.core`, `.core-art`, `.core-glow`, `.core-ring`, `.core-sweep`, `.core-state`, `.core-state-dot` | `body[data-core-state="idle\|thinking\|responding\|speaking\|listening\|offline"]` |
 | Model selector | `.model-selector`, `.model-trigger`, `.model-swatch`, `.model-menu`, `.model-group-label`, `.model-option`, `.opt-*` | `.is-open`, `.is-selected`, `.is-unconfigured`, `.is-on` |
 | Conversation | `.stream`, `.empty-state`, `.empty-rule`, `.empty-title`, `.empty-sub`, `.suggestions`, `.suggestion`, `.messages`, `.message`, `.avatar`, `.bubble`, `.message-meta`, `.message-body`, `.caret` | `.is-user`, `.is-assistant`, `.is-error` |
 | Composer | `.composer-wrap`, `.composer`, `.composer-actions`, `.stream-status`, `.composer-hint`, `.composer-footnote`, `.mic-btn`, `.send-btn` | `:focus-within`, `.is-active`, `.is-busy`, `:disabled` |
@@ -197,6 +198,13 @@ states live on the shell (`.app-shell.context-collapsed`). Risk is always a
 `risk-*` class paired with a visible text label, never colour alone. All
 interpolated text passes through `esc()`; streaming text is assigned with
 `textContent`, never `innerHTML`.
+
+The one exception is the core's state, which is a **data attribute on `<body>`**
+(`data-core-state`). It has to drive two elements in different subtrees — the
+empty-state hero and the rail orb — without either owning the other's markup, and
+a `body` attribute is the only selector that reaches both. `setCoreState()` in
+`motion.js` is the single writer; `tests/test_web_core_assets.py` asserts that
+every state it can emit has a rule in `app.css`.
 
 ## 7. Adding a component
 

@@ -4,7 +4,7 @@
 
 import * as api from './api.js';
 import * as ui from './components.js';
-import { initMotion, animateIn, setOrbListening, prefersReducedMotion } from './motion.js';
+import { initMotion, animateIn, setOrbListening, setCoreState, prefersReducedMotion } from './motion.js';
 import { VoiceController } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
@@ -36,6 +36,13 @@ const SUGGESTIONS = [
 
 /* ------------------------------------------------------------- utilities */
 function setStatus(text) { $('streamStatus').textContent = text || ''; }
+/** The core shows the truth about the engine: idle only when a request could
+ *  actually be made, offline when the backend is unreachable. */
+function restCoreState() {
+  if (!state.online) setCoreState('offline');
+  else if (voice.active) setCoreState('listening');
+  else setCoreState('idle');
+}
 function scrollToBottom() {
   const s = $('stream');
   s.scrollTop = s.scrollHeight;
@@ -56,6 +63,15 @@ function openContext(open) {
 function contextIsOpen() {
   return !$('appShell').classList.contains('context-collapsed');
 }
+/** On phones the composer is fixed to the bottom edge, so the conversation has
+ *  to reserve its real height. A static guess was hiding the last suggestion
+ *  behind the composer as soon as the textarea grew. */
+function syncComposerHeight() {
+  const wrap = document.querySelector('.composer-wrap');
+  if (!wrap) return;
+  const h = Math.ceil(wrap.getBoundingClientRect().height);
+  document.documentElement.style.setProperty('--composer-h', `${h}px`);
+}
 /* Stateful UI is deep-linkable: the active view lives in ?view=. */
 function syncViewUrl(view) {
   try {
@@ -74,6 +90,7 @@ async function boot() {
   // On narrow screens the context panel is a drawer and must start closed,
   // otherwise it covers the entire conversation on first load.
   if (window.innerWidth <= 980) shell.classList.add('context-collapsed');
+  document.body.dataset.coreState = 'idle';
   initMotion();
 
   const greeting = $('greetingWord');
@@ -95,6 +112,11 @@ async function boot() {
   document.querySelector('.topbar-right').prepend(newBtn);
 
   bindEvents();
+  syncComposerHeight();
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(syncComposerHeight).observe(document.querySelector('.composer-wrap'));
+  }
+  window.addEventListener('resize', syncComposerHeight);
   const savedView = new URL(location.href).searchParams.get('view');
   if (savedView && savedView !== 'chat' && window.innerWidth > 980) {
     const btn = document.querySelector(`.rail-item[data-view="${CSS.escape(savedView)}"]`);
@@ -116,6 +138,7 @@ function newConversation() {
   setStatus('');
   $('input').value = '';
   $('input').focus();
+  restCoreState();
 }
 
 /* --------------------------------------------------------------- refresh */
@@ -140,9 +163,11 @@ async function refreshAll() {
     state.pending = pending.pending || [];
 
     renderAll(health);
+    restCoreState();
   } catch (err) {
     state.online = false;
     setConnection(false);
+    setCoreState('offline');
     $('composerFootnote').textContent =
       'Engine offline. Reopen the Tolesh window from the tray, or restart the app.';
     ui.toast(`Backend not connected: ${err.message}`, 'error');
@@ -282,6 +307,7 @@ async function send(text) {
   $('sendBtn').classList.add('is-busy');
   $('emptyState').style.display = 'none';
   $('input').value = '';
+  setCoreState('thinking');
 
   const userEl = ui.createMessage('user', t);
   $('messages').appendChild(userEl);
@@ -330,6 +356,7 @@ async function send(text) {
         break;
       }
       case 'token':
+        if (!buffer) setCoreState('responding');
         buffer += ev.data;
         ui.setMessageText(botEl, buffer, true);
         scrollToBottom();
@@ -383,7 +410,13 @@ async function send(text) {
     $('sendBtn').classList.remove('is-busy');
     setStatus('');
     scrollToBottom();
-    if (voice.active && buffer) voice.speak(buffer);
+    restCoreState();
+    if (voice.active && buffer) {
+      voice.speak(buffer, {
+        onStart: () => setCoreState('speaking'),
+        onEnd: restCoreState,
+      });
+    }
     await silentRefresh();
   }
 }
@@ -533,7 +566,12 @@ function bindEvents() {
 const voice = new VoiceController({
   onResult: (text) => { $('input').value = ''; send(text); },
   onInterim: (text) => { $('input').value = text; },
-  onState: (s) => setOrbListening(s === 'listening'),
+  onState: (s) => {
+    setOrbListening(s === 'listening');
+    // Voice turning off must not overwrite "thinking" while a reply is in
+    // flight — only a genuinely idle session goes back to Ready.
+    if (s !== 'listening' && !state.streaming) restCoreState();
+  },
   onError: (msg) => ui.toast(msg, 'error'),
 });
 

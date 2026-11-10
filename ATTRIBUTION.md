@@ -67,6 +67,17 @@ Full details and the audit checklist are in
 | GSAP | 3.13.0, bundled as [`web/vendor/gsap.min.js`](web/vendor/gsap.min.js) | Copyright 2025, GreenSock / Webflow | GSAP Standard "No Charge" License — <https://gsap.com/standard-license/> | Proprietary header preserved **verbatim** in the bundled file |
 | Bodoni Moda (woff2) | Google Fonts | Copyright 2020 The Bodoni Moda Project Authors | SIL Open Font License 1.1 | [`LICENSES/OFL-Bodoni-Moda.txt`](LICENSES/OFL-Bodoni-Moda.txt) |
 | Jost (woff2) | Google Fonts | Copyright 2020 The Jost Project Authors | SIL Open Font License 1.1 | [`LICENSES/OFL-Jost.txt`](LICENSES/OFL-Jost.txt) |
+| Tolesh core artwork | Supplied by the project owner as `circle-made-neon-particles.zip` (`1410.jpg` + `1410.eps`, 5000×5000); originals kept at [`docs/source-assets/`](docs/source-assets) | Not stated by the supplier | **Unverified** — see below | Derived WebP files in `web/assets/` are built from it by `scripts/build_core_assets.py` |
+
+**Core artwork — unresolved provenance.** The file arrived from the repository
+owner with no licence, no author and no source URL. It is used as the
+application's visual identity, not as a third-party library, but that is a
+factual description of how it is used, **not** a licence grant. Before any
+distribution — including a public release of the packaged app — the owner must
+confirm the rights, or the asset must be replaced. `scripts/build_core_assets.py`
+regenerates every derived file from the original, so a replacement is a
+one-command change. No claim is made here that the artwork is free to
+redistribute.
 
 GSAP's licence prohibits removing or altering proprietary notices and prohibits
 use in no-code visual-animation-building tools that compete with Webflow.

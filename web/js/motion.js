@@ -58,6 +58,35 @@ export function animateIn(el) {
   }
 }
 
+/* ------------------------------------------------------------- core state */
+/* One state machine for the assistant's presence. <body data-core-state> drives
+   the hero core and the rail orb from CSS, so neither element has to know about
+   the other, and the caption stays in sync because it is written here too.
+   The labels describe the engine, not decoration: "Ready" is only shown when a
+   request could actually be made. */
+const CORE_LABELS = {
+  idle: 'Ready',
+  listening: 'Listening',
+  thinking: 'Thinking',
+  responding: 'Writing',
+  speaking: 'Speaking',
+  offline: 'Engine offline',
+};
+
+let coreState = 'idle';
+
+export function setCoreState(name) {
+  if (!CORE_LABELS[name] || name === coreState) return;
+  coreState = name;
+  document.body.dataset.coreState = name;
+  const label = document.getElementById('coreStateText');
+  if (label) label.textContent = CORE_LABELS[name];
+}
+
+export function getCoreState() {
+  return coreState;
+}
+
 export function setOrbListening(active) {
   const orb = document.getElementById('voiceOrb');
   const caption = document.getElementById('orbCaption');
@@ -67,6 +96,7 @@ export function setOrbListening(active) {
   btn?.classList.toggle('is-active', active);
   if (caption) caption.textContent = active ? 'Listening' : 'Voice';
   orb.setAttribute('aria-label', active ? 'Stop voice conversation' : 'Start a voice conversation');
+  if (active) setCoreState('listening');
   if (active && window.gsap && !prefersReducedMotion()) {
     window.gsap.fromTo('.orb-ring-2', { scale: 0.85, opacity: 0.6 },
       { scale: 1.25, opacity: 0, duration: 1.4, repeat: -1, ease: 'power1.out' });

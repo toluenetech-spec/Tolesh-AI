@@ -1,0 +1,32 @@
+{
+  "source": "tolesh-core-source.jpg",
+  "source_size": [
+    5000,
+    5000
+  ],
+  "background": "#051D29",
+  "crop": [
+    240,
+    244,
+    4788,
+    4792
+  ],
+  "cropped_size": [
+    4548,
+    4548
+  ],
+  "covered_pixels_pct": 32.7,
+  "max_alpha_pct": 100.0,
+  "gamma": 0.86,
+  "noise_floor": 4.0,
+  "written": [
+    {
+      "path": "web/assets/tolesh-core-512.webp",
+      "bytes": 189456
+    },
+    {
+      "path": "web/assets/tolesh-core-1024.webp",
+      "bytes": 530318
+    }
+  ]
+}

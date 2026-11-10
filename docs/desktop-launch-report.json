@@ -12,7 +12,7 @@
       "step": "backend_started",
       "ok": true,
       "error": null,
-      "port": 43571
+      "port": 36499
     },
     {
       "step": "health",
@@ -20,29 +20,35 @@
       "product": "Tolesh",
       "providers_configured": [
         "offline",
-        "ollama"
+        "ollama",
+        "dahl"
       ]
-    },
-    {
-      "step": "chat_sync",
-      "conversation_id": "d91071bbd8fc8f37",
-      "reply": "How far! I dey here, no wahala at all. Wetin dey worry you today? Talk to me any",
-      "model": "offline:tolesh-offline"
     },
     {
       "step": "ai_window",
       "has_web_view": true,
-      "url": "http://127.0.0.1:43571/"
+      "url": "http://127.0.0.1:36499/"
     },
     {
       "step": "web_engine_load",
       "loaded": true
     },
     {
+      "step": "engine_probe",
+      "columns": "side-by-side",
+      "coreLoaded": true,
+      "coreNatural": 300,
+      "coreWidth": 268,
+      "label": "Ready",
+      "orbLoaded": true,
+      "overflow": 0,
+      "state": "idle"
+    },
+    {
       "step": "screenshot",
       "saved": true,
-      "path": "/tmp/tolesh-launch/tolesh-desktop-window.png",
-      "size": 565185
+      "path": "/workspace/tolesh/docs/img/tolesh-desktop-integrated.png",
+      "size": 667456
     },
     {
       "step": "cleanup",
@@ -50,9 +56,9 @@
     },
     {
       "step": "persistence_after_desktop_exit",
-      "memories": 1,
+      "memories": 3,
       "marker_present": true,
-      "conversations": 1
+      "conversations": 27
     }
   ],
   "ok": true

@@ -86,7 +86,14 @@ All colours are `oklch()` so lightness is perceptually consistent across hues.
 | `--brass-08/14/24` | brass at 8% / 14% / 24% | Hover, selected, borders |
 | `--terracotta` | `oklch(0.645 0.150 42)` | Listening state |
 | `--indigo` / `--indigo-soft` | `oklch(0.335 0.070 265)` | Adire texture / ambient |
+| `--core` / `--core-soft` / `--core-faint` | `oklch(0.82 0.132 216)` | The assistant's core: state dot, rings, sweep |
+| `--core-glow` | `oklch(0.72 0.130 224 / 0.20)` | Halo behind the core |
 | `--ok` / `--warn` / `--danger` | green / amber / red | Status, risk tags, destructive actions |
+
+The core's cyan is the **only** cold colour in the palette and it is deliberate:
+the artwork the owner supplied is cyan, and cold light inside a warm room reads
+as computation rather than as a second accent competing with the brass. It is
+never used for UI chrome — only for the assistant's presence and its state.
 
 `<html>` declares `color-scheme: dark` and
 `<meta name="theme-color" content="#0D0C0A">` so native scrollbars, inputs and
@@ -145,6 +152,18 @@ Breakpoints:
 | ≤ 1180px | Context narrows to 300px |
 | ≤ 980px | Context becomes a fixed drawer; **starts collapsed** so it never covers the conversation on load |
 | ≤ 680px | Rail becomes a 60px top bar; composer becomes a fixed bottom bar with `env(safe-area-inset-*)` padding |
+| ≤ 400px | Wordmark and eyebrow drop; the nav shrinks rather than pushing the voice orb off-screen |
+
+**Container queries, not just media queries.** The empty state decides between
+one and two columns with `@container stream (min-width: 700px)` — the width that
+matters is the space left by the context panel, which differs from the window
+width by up to 336px. Stacked is the base style and `@supports not` provides a
+media-query fallback, so the layout degrades in the right direction.
+
+The hero core is sized in `cqw` and capped in `vh`
+(`clamp(120px, min(42cqw, 22vh), 210px)`): container width keeps it proportional
+to its column, and the height cap stops it pushing the greeting under the
+composer on a short laptop screen.
 
 Full-bleed chrome uses `viewport-fit=cover` and safe-area insets.
 `overscroll-behavior: contain` on the drawer, modal and model menu prevents

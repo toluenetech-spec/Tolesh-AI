@@ -171,11 +171,28 @@ client.
 [ANIMATION-GUIDELINES.md](ANIMATION-GUIDELINES.md) and
 [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
+The assistant's **core** is the supplied particle artwork, converted to real
+alpha by [`scripts/build_core_assets.py`](scripts/build_core_assets.py) rather
+than pasted on as a navy rectangle. It appears at two scales — the empty-state
+hero and the rail voice orb — and reports engine state rather than decorating:
+`Ready`, `Thinking`, `Writing`, `Speaking`, and `Engine offline` (paused and
+desaturated). See [IMPLEMENTATION-REPORT.md §9d](IMPLEMENTATION-REPORT.md).
+
+Layout responds to the space the context panel actually leaves, via container
+queries on `.stream`, and is measured at seven widths by
+[`scripts/capture_responsive.py`](scripts/capture_responsive.py).
+
 <p align="center">
-  <img src="docs/img/tolesh-interface.png" alt="Tolesh desktop conversation interface with the Lagos Nocturne palette, model selector, composer and transparent context panel" width="900">
+  <img src="docs/img/tolesh-interface.png" alt="Tolesh desktop conversation interface with the Lagos Nocturne palette, the particle core, model selector, composer and transparent context panel" width="900">
 </p>
 
 <p align="center"><sub>The real interface, captured in Chromium during the regression pass.</sub></p>
+
+<p align="center">
+  <img src="docs/img/responsive-390-phone.png" alt="The same interface at 390 pixels wide: the particle core above the greeting, a single-row navigation bar, and a fixed composer at the bottom edge" width="420">
+</p>
+
+<p align="center"><sub>390 px, rendered — not a mockup of the mobile view. Seven widths are measured by <code>scripts/capture_responsive.py</code>.</sub></p>
 
 ---
 

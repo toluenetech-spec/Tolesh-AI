@@ -63,9 +63,11 @@
 
       <div class="rail-bottom">
         <button class="voice-orb" id="voiceOrb" aria-label="Start a voice conversation" title="Voice conversation">
+          <span class="orb-halo" aria-hidden="true"></span>
+          <img class="orb-art" src="./assets/tolesh-core-512.webp" alt="" width="64" height="64" decoding="async" />
           <span class="orb-ring orb-ring-1" aria-hidden="true"></span>
           <span class="orb-ring orb-ring-2" aria-hidden="true"></span>
-          <svg class="icon" aria-hidden="true"><use href="#i-mic" /></svg>
+          <span class="orb-mic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-mic" /></svg></span>
         </button>
         <p class="orb-caption" id="orbCaption">Voice</p>
         <div class="connection" id="connection" title="Backend connection">
@@ -91,10 +93,37 @@
 
       <section class="stream" id="stream" aria-label="Conversation" aria-live="off">
         <div class="empty-state" id="emptyState">
-          <div class="empty-rule" aria-hidden="true"></div>
-          <h2 class="empty-title">Good <span id="greetingWord">evening</span>.</h2>
-          <p class="empty-sub">Talk to me anyhow — English, Pidgin or Yoruba. I'll keep it honest, and I'll keep your data yours.</p>
-          <div class="suggestions" id="suggestions"></div>
+          <div class="empty-copy">
+            <div class="empty-rule" aria-hidden="true"></div>
+            <h2 class="empty-title">Good <span id="greetingWord">evening</span>.</h2>
+            <p class="empty-sub">Talk to me anyhow — English, Pidgin or Yoruba. I'll keep it honest, and I'll keep your data yours.</p>
+            <div class="suggestions" id="suggestions"></div>
+          </div>
+
+          <!-- The assistant's presence: the supplied particle artwork, with a
+               live state line so the object reports what the engine is doing
+               instead of animating for decoration. -->
+          <div class="core-stage">
+            <div class="core" id="core">
+              <span class="core-glow" aria-hidden="true"></span>
+              <img class="core-art" id="coreArt"
+                   src="./assets/tolesh-core-512.webp"
+                   srcset="./assets/tolesh-core-512.webp 512w, ./assets/tolesh-core-1024.webp 1024w"
+                   sizes="(min-width: 1400px) 360px, 300px"
+                   alt="" width="512" height="512" decoding="async" fetchpriority="high" />
+              <span class="core-ring core-ring-1" aria-hidden="true"></span>
+              <span class="core-ring core-ring-2" aria-hidden="true"></span>
+              <span class="core-sweep" aria-hidden="true"></span>
+            </div>
+            <!-- Deliberately not a live region: #streamStatus already
+                 announces routing, retries and failures, and a second polite
+                 region would double every announcement. This caption stays
+                 readable on demand for anyone who navigates the page. -->
+            <p class="core-state">
+              <span class="core-state-dot" aria-hidden="true"></span>
+              <span id="coreStateText">Ready</span>
+            </p>
+          </div>
         </div>
         <ol class="messages" id="messages" aria-label="Messages"></ol>
       </section>

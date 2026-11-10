@@ -251,10 +251,13 @@ resolved: the PyQt6 shell now owns the FastAPI engine for its whole lifetime.
 | Frontend | `web/js/components.js` provider rows became editable (key + endpoint + test), `web/js/api.js` accepts a desktop-injected token, `web/js/app.js` reports the real reason a backend is offline |
 | Packaging | `requirements.txt` gains `fastapi`/`uvicorn`/`httpx`; `tolesh_desktop.spec` gains the engine modules, uvicorn/starlette hidden imports and the `web/` datas; `scripts/run_linux.sh` launches the desktop app by default with a Qt dependency preflight |
 
-Verified end to end on a real X server: engine online, UI rendered inside
-QtWebEngine, memory written before the window opened and still present after
-the application exited. Evidence: `docs/desktop-launch-report.json`
-(`"ok": true`) and `docs/img/tolesh-desktop-integrated.png`.
+Verified end to end on a real X server with
+[`scripts/verify_desktop_launch.py`](scripts/verify_desktop_launch.py) — the
+harness is now part of the repository rather than a `/tmp` script, and it runs
+JavaScript *inside* QtWebEngine to confirm the interface actually rendered
+(`coreLoaded: true`, `coreWidth: 267`, `overflow: 0`, `state: "idle"`). Evidence:
+`docs/desktop-launch-report.json` (`"ok": true`) and
+`docs/img/tolesh-desktop-integrated.png`.
 
 ## 9c. Dahl provider + live web interface (this build)
 
@@ -316,6 +319,121 @@ Evidence: `docs/dahl-report.json`, `docs/verification-report.json`,
 gateway's behaviour under sustained concurrency. The key used for these runs is
 the owner's and lives only in `~/.config/tolesh/providers.json` (mode `0600`),
 outside the repository.
+
+## 9d. The interface, rebuilt around the supplied artwork
+
+The owner supplied `circle-made-neon-particles.zip` — a 5000×5000 JPEG and its
+EPS original: a cyan particle cloud on a flat `#051D29` backdrop. It was asked
+for as the interface's visual identity, and made responsive. It is now the
+assistant's **core**, one object at three scales, and the layout was rebuilt to
+carry it.
+
+### The artwork is an asset, not a background image
+
+A rectangle of navy dropped onto the warm ink interface looks like a pasted
+screenshot, so the backdrop is converted into real alpha by
+[`scripts/build_core_assets.py`](scripts/build_core_assets.py):
+
+- the four corners are sampled and asserted to be **one** colour — if a
+  different render is supplied the script refuses rather than degrading quietly;
+- `alpha = ((max(r,g,b) − bg_lum − 4) / (255 − bg_lum − 4)) ** 0.86`, i.e. a
+  pixel's distance from the backdrop *is* its coverage. The brightest particle
+  reaches exactly 1.0, so highlights are not permanently translucent;
+- RGB is left alone. Un-premultiplying against a dark backdrop saturates faint
+  dots to white and destroys the cyan; keeping the sampled colour is what makes
+  the faint interior mesh read as faint;
+- the frame is cropped to the particles plus 2 % padding, so the layout sizes
+  the visible object rather than an invisible border.
+
+Output: `web/assets/tolesh-core-1024.webp` (518 KB) and
+`tolesh-core-512.webp` (186 KB), with the derivation recorded in
+`tolesh-core.json`. WebP only — a PNG fallback was 2× larger for identical
+pixels, and every engine Tolesh targets decodes WebP. The originals live in
+`docs/source-assets/` so the asset can be rebuilt or replaced in one command.
+
+### Where it appears, and what it reports
+
+| Surface | Size | Behaviour |
+| --- | --- | --- |
+| Empty-state hero | `clamp(120px, min(42cqw, 22vh), 210px)` stacked, up to 350 px in two columns | turns once per 52 s, breathes on a 7.5 s cycle |
+| Rail voice orb | 68 px desktop / 42 px phone | the mic sits in the artwork's hollow centre, not as a badge over the rim |
+
+The caption under the hero is **not** decoration. `<body data-core-state>` drives
+both surfaces from one state machine in `web/js/motion.js`:
+
+| State | Set by | Caption | Motion |
+| --- | --- | --- | --- |
+| `idle` | boot, or a reply finishing | Ready | 52 s turn, 7.5 s breathe |
+| `thinking` | Send, before the first token | Thinking | 12 s turn, conic sweep, pulsing rings |
+| `responding` | the first streamed token | Writing | 20 s turn |
+| `speaking` | the synthesiser's own `onstart` | Speaking | 1.1 s breathe |
+| `offline` | `/api` unreachable | Engine offline | **paused**, desaturated |
+
+`speaking` is driven by `SpeechSynthesisUtterance.onstart`, not by "we asked it to
+speak", and `offline` stops the animation entirely — a core that keeps spinning
+while the backend is down would be a lie the interface tells on its own.
+
+### Responsiveness
+
+The layout is driven by **container queries on `.stream`**, not by window width:
+a 336 px context panel makes those two numbers differ by a third, so
+`@container stream (min-width: 700px)` is what switches to two columns. Stacked
+is the base style, so an engine without container queries still gets a sane
+layout (`@supports not` provides a media-query fallback).
+
+Measured in Chromium at seven widths (`scripts/capture_responsive.py`,
+`docs/responsive-report.json`, `docs/img/responsive-*.png`):
+
+| Viewport | Core | Layout | Horizontal overflow | Rail overflow | Greeting sliced |
+| --- | --- | --- | --- | --- | --- |
+| 320×640 | 116 px | stacked | 0 | 0 | no |
+| 390×844 | 152 px | stacked | 0 | 0 | no |
+| 768×1024 | 211 px | stacked | 0 | 0 | no |
+| 1024×768 | 170 px | stacked | 0 | 0 | no |
+| 1280×800 | 266 px | copy + core | 0 | 0 | no |
+| 1440×900 | 321 px | copy + core | 0 | 0 | no |
+| 1920×1080 | 352 px | copy + core | 0 | 0 | no |
+
+### Five real layout defects this exposed
+
+1. **The rail overflowed at 320 px** — five nav items plus the brand needed
+   348 px in a 320 px bar and pushed the voice orb off-screen. The nav now
+   shrinks (`flex: 0 1 46px`), the wordmark is dropped below 400 px, and the orb
+   is 38 px there.
+2. **The fixed composer covered the conversation** — `.main` reserved a hard
+   coded 64 px for a composer that is 163 px tall, so the last suggestion row sat
+   underneath it. The height is now measured (`--composer-h`, `ResizeObserver`)
+   and the textarea growing with a long message no longer covers the reply.
+3. **The greeting was sliced in half at 1024×768** — the hero was sized from
+   `vw` while the available width was 592 px. Sizing from `cqw` and capping by
+   `vh` fixed it; the hero is also vertically centred with **auto margins**
+   rather than `align-content: center`, which would have pushed the top of an
+   overflowing hero out of reach.
+4. **The mic badge covered a quarter of the orb** — at 68 px a corner badge read
+   as damage. The icon moved into the hollow centre with a small scrim.
+5. **The orb's halo pushed 2 px of scrollable overflow into the rail** — fixed
+   with `overflow: clip` + `overflow-clip-margin: 10px`, which keeps the glow and
+   the focus ring while removing the scrollable box.
+
+### Verified
+
+| Check | Result |
+| --- | --- |
+| `scripts/verify_web_ui.py` | `passed: true`; core assets decode (`naturalWidth` 512), idle→thinking→idle observed, zero console/page errors |
+| `scripts/capture_responsive.py` | `ok: true` at all 7 widths — no overflow, no sliced greeting, no content under the composer |
+| `scripts/capture_core_states.py` | `ok: true`; all five states observed, transitions recorded as `["thinking", "responding"]` |
+| `tests/test_web_core_assets.py` | 10 passed — asset integrity, every `src`/`href`/`url()` resolves, every state has CSS, alpha extraction on a synthetic image |
+| `scripts/build_core_assets.py` | rebuilt from the original; output is byte-stable and the metadata matches |
+
+The new tests caught one gap immediately: `offline` was in `CORE_LABELS` with no
+CSS behind it, so the core kept glowing while the engine was down. That is now a
+test, not a convention.
+
+**Not verified:** the artwork's licence (see [ATTRIBUTION.md](ATTRIBUTION.md) §3
+— the file arrived with no terms, which is a blocker for distribution, not a
+formality), and `speaking` with real audio, because this sandbox has no output
+device. The state is wired to the synthesiser's own event; it was not observed
+producing sound here.
 
 ## 10. Outstanding work
 

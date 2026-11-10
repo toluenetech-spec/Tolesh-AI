@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8787",
+  "states": {
+    "idle": {
+      "state": "idle",
+      "label": "Ready",
+      "screenshot": "docs/img/core-state-idle.png"
+    },
+    "thinking": {
+      "state": "thinking",
+      "label": "Thinking",
+      "screenshot": "docs/img/core-state-thinking.png"
+    },
+    "responding": {
+      "state": "responding",
+      "label": "Writing",
+      "screenshot": "docs/img/core-state-responding.png"
+    },
+    "idle-after-reply": {
+      "state": "idle",
+      "label": "Ready",
+      "screenshot": "docs/img/core-state-idle-after-reply.png"
+    },
+    "offline": {
+      "state": "offline",
+      "label": "Engine offline",
+      "screenshot": "docs/img/core-state-offline.png"
+    }
+  },
+  "errors": [],
+  "transitions": [
+    "thinking",
+    "responding"
+  ],
+  "ok": true
+}

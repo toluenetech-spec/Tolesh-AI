@@ -8,11 +8,11 @@ Run against a live server:
     python3.11 scripts/verify_web_ui.py --url http://127.0.0.1:8787
 
 It exercises the real UI (not a mock): health endpoint, zero console/page
-errors, desktop and mobile layout, streaming chat over SSE, dialog focus trap,
-model listbox keyboard navigation, URL view state, mobile drawer default and an
-explicit ``prefers-reduced-motion: reduce`` emulation. Results are printed as
-JSON and written to ``docs/verification-report.json``; screenshots land in
-``docs/img/``.
+errors, the particle core assets decoding and reporting engine state, desktop
+and mobile layout, streaming chat over SSE, dialog focus trap, model listbox
+keyboard navigation, URL view state, mobile drawer default and an explicit
+``prefers-reduced-motion: reduce`` emulation. Results are printed as JSON and
+written to ``docs/verification-report.json``; screenshots land in ``docs/img/``.
 """
 
 from __future__ import annotations
@@ -68,6 +68,37 @@ def main() -> int:
         print(json.dumps({"fatal": str(exc)}, indent=2))
         return 1
 
+    # A crash must not leave last run's "passed": true on disk. The report is
+    # written in both outcomes, and a failure is recorded as one.
+    try:
+        _run(args, page_url, url, out, report)
+    except Exception as exc:  # noqa: BLE001 - reported, never hidden
+        report["crashed"] = f"{type(exc).__name__}: {exc}"
+        report["passed"] = False
+        report["boolean_checks"] = {k: v for k, v in report["checks"].items()
+                                    if isinstance(v, bool)}
+        Path(args.report).write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(json.dumps({"passed": False, "crashed": report["crashed"],
+                          "checks_so_far": report["boolean_checks"]}, indent=2))
+        return 1
+
+    report["checks"]["console_and_page_errors"] = report["errors"]
+    bool_checks = {k: v for k, v in report["checks"].items()
+                   if isinstance(v, bool)}
+    report["passed"] = (not report["errors"]
+                        and len(bool_checks) >= 9
+                        and all(bool_checks.values())
+                        and bool(report["checks"].get("streamed_reply")))
+    report["boolean_checks"] = bool_checks
+    Path(args.report).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                                 encoding="utf-8")
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0 if report["passed"] else 1
+
+
+def _run(args, page_url: str, url: str, out: Path, report: dict) -> None:
+    """All browser work. Exceptions propagate to main(), which records them."""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
 
@@ -89,6 +120,27 @@ def main() -> int:
         report["checks"]["skip_link"] = page.locator("a.skip-link").count() == 1
         report["checks"]["main_focus_target"] = page.locator(
             "main#mainView").get_attribute("tabindex") == "-1"
+
+        # The core artwork must be a real decoded image, not a broken <img>
+        # behind a gradient: naturalWidth is 0 when the asset 404s.
+        core = page.evaluate("""() => {
+          const art = document.querySelector('.core-art');
+          const orb = document.querySelector('.orb-art');
+          return {
+            heroLoaded: art.complete && art.naturalWidth > 0,
+            heroNatural: art.naturalWidth,
+            orbLoaded: orb.complete && orb.naturalWidth > 0,
+            state: document.body.dataset.coreState,
+            label: document.getElementById('coreStateText').textContent.trim(),
+            animation: getComputedStyle(document.querySelector('.core')).animationName,
+            width: Math.round(document.querySelector('.core').getBoundingClientRect().width),
+          };
+        }""")
+        report["checks"]["core_assets_loaded"] = core["heroLoaded"] and core["orbLoaded"]
+        report["checks"]["core_idle_state"] = (core["state"] == "idle"
+                                               and core["label"] == "Ready")
+        report["checks"]["core_animates"] = core["animation"] == "core-breathe"
+        report["checks"]["core_size"] = core["width"]
 
         # model listbox keyboard navigation
         trigger = page.locator("#modelTrigger")
@@ -114,13 +166,22 @@ def main() -> int:
         # sibling model — the check still requires a genuine streamed reply.
         page.locator("#input").fill("How far?")
         page.locator("#sendBtn").click()
+        # The core has to report the request, not keep saying "Ready" while a
+        # model is being called.
+        on_send = page.evaluate("() => document.body.dataset.coreState")
+        report["checks"]["core_state_on_send"] = on_send
+        report["checks"]["core_state_on_send_ok"] = on_send in ("thinking", "responding")
         page.wait_for_function(
             "() => { const n = document.querySelectorAll('.message.is-assistant .message-body'); "
             "return [...n].some(e => e.textContent.trim().length > 20); }",
-            timeout=60000,
+            timeout=90000,
         )
         report["checks"]["streamed_reply"] = page.locator(
             ".message.is-assistant .message-body").last.inner_text()[:160]
+        page.wait_for_function(
+            "() => document.body.dataset.coreState === 'idle'", timeout=30000)
+        report["checks"]["core_returns_to_idle"] = page.evaluate(
+            "() => document.getElementById('coreStateText').textContent.trim()") == "Ready"
 
         # URL view state: a nav click must write ?view= and survive a reload
         page.locator('.rail-item[data-view="memory"]').click()
@@ -171,19 +232,6 @@ def main() -> int:
         rpage.screenshot(path=str(out / "tolesh-verify-reduced-motion.png"))
         rctx.close()
         browser.close()
-
-    report["checks"]["console_and_page_errors"] = report["errors"]
-    bool_checks = {k: v for k, v in report["checks"].items()
-                   if isinstance(v, bool)}
-    report["passed"] = (not report["errors"]
-                        and len(bool_checks) >= 9
-                        and all(bool_checks.values())
-                        and bool(report["checks"].get("streamed_reply")))
-    report["boolean_checks"] = bool_checks
-    Path(args.report).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n",
-                                 encoding="utf-8")
-    print(json.dumps(report, indent=2, ensure_ascii=False))
-    return 0 if report["passed"] else 1
 
 
 if __name__ == "__main__":
