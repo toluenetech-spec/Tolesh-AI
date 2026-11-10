@@ -173,6 +173,8 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
             spec = st.registry.set_model_enabled(model_id, body.enabled, persist=True)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"model": spec.as_dict()}
 
     @app.get("/api/fallback-order")

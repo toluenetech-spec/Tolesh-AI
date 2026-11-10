@@ -383,3 +383,13 @@ def test_saved_key_is_written_outside_the_repository_with_0600(client, user_conf
     mode = Path(user_config).stat().st_mode & 0o777
     assert mode == 0o600, f"key file is {oct(mode)}, expected 0600"
     assert not str(Path(user_config).resolve()).startswith("/workspace")
+
+
+def test_the_offline_engine_cannot_be_switched_off(client):
+    """It is the terminal fallback; a chain that can end with nothing to answer
+    is not a setting anyone means to choose."""
+    r = client.patch("/api/models/offline:tolesh-offline", json={"enabled": False})
+    assert r.status_code == 400
+    assert "last-resort" in r.json()["detail"]
+    chain = client.get("/api/fallback-order").json()["models"]
+    assert chain[-1] == "offline:tolesh-offline"

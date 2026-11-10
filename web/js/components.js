@@ -430,8 +430,9 @@ export function renderRoute(container, items, { onMove, onToggle } = {}) {
         <button class="text-btn" data-move="down" data-id="${esc(m.id)}"
                 aria-label="Move ${esc(m.label)} down"
                 ${(!m.enabled || i >= live - 1) ? 'disabled' : ''}>${icon('chevron', 'rot-down')}</button>
-        <label class="route-switch" title="${m.enabled ? 'Switch off' : 'Switch on'}">
+        <label class="route-switch" title="${m.provider === 'offline' ? 'The last-resort engine cannot be switched off' : (m.enabled ? 'Switch off' : 'Switch on')}">
           <input type="checkbox" data-toggle="${esc(m.id)}" ${m.enabled ? 'checked' : ''}
+                 ${m.provider === 'offline' ? 'disabled' : ''}
                  aria-label="Enable ${esc(m.label)}">
         </label>
       </span>

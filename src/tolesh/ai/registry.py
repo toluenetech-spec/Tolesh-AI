@@ -485,6 +485,12 @@ class Registry:
         spec = self._models.get(model_id)
         if spec is None:
             raise KeyError(f"Unknown model: {model_id}")
+        if not enabled and spec.provider == "offline":
+            # It is the terminal fallback: switching it off would leave a chain
+            # that can end with nothing to answer, which is never what anyone
+            # means by "disable a model".
+            raise ValueError("The offline engine is the last-resort fallback "
+                             "and cannot be switched off.")
         p = self.providers.get(spec.provider)
         if p is not None:
             self.providers[spec.provider] = replace(p, models=tuple(
