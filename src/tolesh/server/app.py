@@ -138,9 +138,13 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         configured = [p.name for p in st.registry.providers.values() if p.configured]
+        # The order the router will actually try, so the UI can state the
+        # fallback plan instead of guessing it from the catalogue order.
+        chain = [m.id for m in st.registry.candidates("chat")]
         return {"status": "ok", "version": VERSION, "product": "Tolesh",
                 "providers_configured": configured,
                 "default_model": st.registry.default_model or None,
+                "fallback_order": chain[:6],
                 "database": st.db_path,
                 "static_frontend": web.is_dir(),
                 "time": time.time()}

@@ -45,7 +45,8 @@ class ProviderError(Exception):
     def __init__(self, message: str, *, provider: str, model: str,
                  retryable: bool = False, status: int | None = None,
                  cause: BaseException | None = None,
-                 retry_after: float | None = None):
+                 retry_after: float | None = None,
+                 code: str | None = None):
         super().__init__(message)
         self.provider = provider
         self.model = model
@@ -54,6 +55,10 @@ class ProviderError(Exception):
         self.cause = cause
         # Seconds the endpoint asked us to wait, when it bothered to say so.
         self.retry_after = retry_after
+        # Machine-readable code from the endpoint's error body, e.g.
+        # "model_concurrency". Lets the router tell "this model is full, use
+        # another one" apart from "this request is wrong, do not retry".
+        self.code = code
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +68,7 @@ class ProviderError(Exception):
             "retryable": self.retryable,
             "status": self.status,
             "retry_after": self.retry_after,
+            "code": self.code,
         }
 
 

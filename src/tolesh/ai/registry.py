@@ -31,13 +31,13 @@ TASK_MODEL_ORDER: dict[str, tuple[str, ...]] = {
     # inside the provider is faster and more predictable than reaching for a
     # different vendor.
     "chat": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-             "dahl:MiniMaxAI/MiniMax-M2.7", "dahl:zai-org/GLM-5.3-Flash",
+             "dahl:zai-org/GLM-5.3-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
              "gonka:GLM-4.6", "openai:gpt-4o", "jev:jev-chat"),
     "reasoning": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-                  "dahl:MiniMaxAI/MiniMax-M2.7",
+                  "dahl:zai-org/GLM-5.3-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
                   "deepseek:deepseek-reasoner", "gonka:GLM-4.6"),
     "code": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-             "dahl:MiniMaxAI/MiniMax-M2.7",
+             "dahl:zai-org/GLM-5.3-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
              "deepseek:deepseek-chat", "openai:gpt-4o"),
     "fast": ("dahl:MiniMaxAI/MiniMax-M2.7", "dahl:zai-org/GLM-5.3-Flash",
              "offline:tolesh-offline", "groq:llama-3.3-70b-versatile",
@@ -225,7 +225,8 @@ def _catalog() -> dict[str, ProviderSpec]:
             _m("dahl", "MiniMaxAI/MiniMax-M2.7", "MiniMax M2.7",
                tasks=("chat", "code", "fast"), cost_tier="cheap"),
             _m("dahl", "zai-org/GLM-5.3-Flash", "GLM-5.3 Flash",
-               tasks=("chat", "fast", "classification"), cost_tier="cheap"),
+               tasks=("chat", "code", "reasoning", "fast", "classification"),
+               cost_tier="cheap"),
         ),
         notes=("Dahl inference gateway (OpenAI-compatible). Free tier queues behind "
                "paid accounts, so a busy model returns 429 model_concurrency — "

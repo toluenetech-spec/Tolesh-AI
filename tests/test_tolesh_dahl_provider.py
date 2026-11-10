@@ -40,9 +40,10 @@ def test_chat_chain_tries_the_other_dahl_models_before_other_vendors():
     registry = Registry.from_defaults()
     chain = [m.id for m in registry.candidates("chat")]
     assert chain[0] == "dahl:deepseek-ai/DeepSeek-V4-Flash-0731"
-    # A queued model should fall to its neighbour inside the same provider.
-    assert chain[1] == "dahl:MiniMaxAI/MiniMax-M2.7"
-    assert chain[2] == "dahl:zai-org/GLM-5.3-Flash"
+    # A queued model should fall to its neighbour inside the same provider,
+    # and GLM is the preferred stand-in: DeepSeek → GLM → MiniMax.
+    assert chain[1] == "dahl:zai-org/GLM-5.3-Flash"
+    assert chain[2] == "dahl:MiniMaxAI/MiniMax-M2.7"
     assert chain[-1] == "offline:tolesh-offline"
 
 
@@ -201,3 +202,142 @@ def test_lazy_app_is_asgi3_not_asgi2():
     request fails with a missing-arguments TypeError. Launching uvicorn found
     this; this test keeps it fixed."""
     assert inspect.iscoroutinefunction(_LazyApp().__call__)
+
+
+# --------------------------------------------------- capacity-aware fallback
+class _GatewayStub:
+    """A provider whose busy models answer 429 model_concurrency, like Dahl."""
+
+    name = "dahl"
+
+    def __init__(self, busy: tuple[str, ...]):
+        self.busy = busy
+        self.calls: list[str] = []
+
+    def _maybe_fail(self, model_id: str) -> None:
+        self.calls.append(model_id)
+        if any(b in model_id for b in self.busy):
+            raise ProviderError(
+                "HTTP 429: This model is at concurrency capacity.",
+                provider="dahl", model=model_id, retryable=True,
+                status=429, retry_after=30.0, code="model_concurrency",
+            )
+
+    def chat_stream(self, messages, model_id, **kw):
+        self._maybe_fail(model_id)
+        yield "hello"
+        yield " there"
+
+    def chat(self, messages, model_id, **kw):
+        from tolesh.ai.providers import ProviderResult, Usage
+        self._maybe_fail(model_id)
+        return ProviderResult(text="hello there", model_id=model_id,
+                              usage=Usage(prompt_tokens=1, completion_tokens=2))
+
+
+@pytest.fixture()
+def dahl_router(monkeypatch):
+    from tolesh.ai import ModelRouter, UsageLedger
+    monkeypatch.setenv("TOLESH_DAHL_API_KEY", "test-key")
+    monkeypatch.delenv("TOLESH_DEFAULT_MODEL", raising=False)
+    ledger = UsageLedger(in_memory=True)
+    router = ModelRouter(Registry.from_defaults(), ledger)
+    try:
+        yield router
+    finally:
+        ledger.close()
+
+
+def test_full_model_is_skipped_immediately_instead_of_retried(dahl_router):
+    """A queued model says "switch model" — sleeping through retries would just
+    make the user wait before the fallback they already asked for."""
+    import time
+
+    stub = _GatewayStub(busy=("DeepSeek", "GLM"))
+    dahl_router._provider_for = lambda spec: stub
+
+    started = time.time()
+    events = list(dahl_router.stream([{"role": "user", "content": "hi"}], task="chat"))
+    elapsed = time.time() - started
+
+    # Exactly one call per model: no retry of a model that is already full.
+    assert stub.calls == [
+        "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+        "dahl:zai-org/GLM-5.3-Flash",
+        "dahl:MiniMaxAI/MiniMax-M2.7",
+    ]
+    assert not [e for e in events if e.type == "status" and e.data.get("kind") == "retry"]
+    assert elapsed < 2.0, f"fallback slept {elapsed:.1f}s on a full model"
+
+    done = next(e for e in events if e.type == "done")
+    assert done.data["model"] == "dahl:MiniMaxAI/MiniMax-M2.7"
+    assert done.data["fallbacks_used"] == 2
+
+
+def test_gateway_error_code_reaches_the_stream(dahl_router):
+    stub = _GatewayStub(busy=("DeepSeek", "GLM"))
+    dahl_router._provider_for = lambda spec: stub
+    events = list(dahl_router.stream([{"role": "user", "content": "hi"}], task="chat"))
+    errors = [e.data for e in events
+              if e.type == "status" and e.data.get("kind") == "provider_error"]
+    assert [e["code"] for e in errors] == ["model_concurrency", "model_concurrency"]
+    assert [e["status"] for e in errors] == [429, 429]
+
+
+def test_complete_path_also_switches_models_without_retrying(dahl_router):
+    stub = _GatewayStub(busy=("DeepSeek", "GLM"))
+    dahl_router._provider_for = lambda spec: stub
+    result = dahl_router.complete([{"role": "user", "content": "hi"}], task="chat")
+    assert result.text == "hello there"
+    assert result.model_id == "dahl:MiniMaxAI/MiniMax-M2.7"
+    assert stub.calls == [
+        "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+        "dahl:zai-org/GLM-5.3-Flash",
+        "dahl:MiniMaxAI/MiniMax-M2.7",
+    ]
+
+
+def test_error_body_code_is_parsed_from_the_gateway_response():
+    """The 429 body is ``{"error": {"code": "model_concurrency", ...}}``; the
+    router needs that code, not a substring match on prose."""
+    from tolesh.ai.providers.openai_compatible import OpenAICompatibleProvider
+    from tolesh.ai.registry import ProviderSpec
+
+    spec = ProviderSpec(name="dahl", label="Dahl",
+                        base_url="https://example.invalid/v1",
+                        api_key_env="TOLESH_DAHL_API_KEY", api_key="k")
+    prov = OpenAICompatibleProvider(spec)
+    body = json.dumps({"error": {"code": "model_concurrency", "message": "busy"}})
+
+    class _R:
+        status_code = 429
+        headers = {}
+
+        def read(self):
+            return body.encode()
+
+    with pytest.raises(ProviderError) as exc:
+        prov._raise_for_status(_R(), "zai-org/GLM-5.3-Flash")
+    assert exc.value.code == "model_concurrency"
+    assert exc.value.as_dict()["code"] == "model_concurrency"
+
+
+def test_health_states_the_real_fallback_order(monkeypatch):
+    """The UI line under the composer names the chain, so it has to come from
+    the router rather than from catalogue order (which is by declaration)."""
+    from fastapi.testclient import TestClient
+    from tolesh.server.app import AppState, create_app
+
+    monkeypatch.setenv("TOLESH_DAHL_API_KEY", "test-key")
+    monkeypatch.delenv("TOLESH_API_TOKEN", raising=False)
+    state = AppState(in_memory=True)
+    try:
+        with TestClient(create_app(state=state, serve_static=False)) as c:
+            order = c.get("/api/health").json()["fallback_order"]
+    finally:
+        state.close()
+    assert order[:3] == [
+        "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+        "dahl:zai-org/GLM-5.3-Flash",
+        "dahl:MiniMaxAI/MiniMax-M2.7",
+    ]

@@ -46,6 +46,20 @@ class RouterError(Exception):
         return {"message": str(self), "attempts": self.attempts}
 
 
+# Codes a gateway uses to say "this model has no room right now", as opposed to
+# "this request is wrong". The distinction matters: retrying a full model just
+# burns the user's time, while another model on the same gateway may be idle.
+_CAPACITY_CODES = {"model_concurrency", "capacity", "overloaded", "model_overloaded"}
+
+
+def _model_is_full(exc: ProviderError) -> bool:
+    """True when the endpoint said *this model* is at capacity."""
+    if (exc.code or "").strip().lower() in _CAPACITY_CODES:
+        return True
+    text = str(exc).lower()
+    return "model_concurrency" in text or "concurrency capacity" in text
+
+
 class ModelRouter:
     def __init__(self, registry: Registry | None = None,
                  ledger: UsageLedger | None = None, *, offline_delay: float = 0.012):
@@ -142,9 +156,12 @@ class ModelRouter:
                         "kind": "provider_error", "model": spec.id,
                         "message": str(exc), "retryable": exc.retryable,
                         "status": exc.status, "retry_after": exc.retry_after,
-                        "attempt": attempt,
+                        "code": exc.code, "attempt": attempt,
                     }, spec.id)
-                    if exc.retryable and attempt < max_attempts:
+                    # A full model is not a transient blip on *this* model: the
+                    # gateway is telling us to switch, so do it immediately
+                    # instead of sleeping through retries the user can hear.
+                    if exc.retryable and attempt < max_attempts and not _model_is_full(exc):
                         backoff = min(0.25 * (2 ** (attempt - 1)), 2.0)
                         # Honour the endpoint's own Retry-After, but never stall
                         # a live stream for long: the chain has other models.
@@ -223,7 +240,7 @@ class ModelRouter:
                                            max_tokens=max_tokens)
                 except ProviderError as exc:
                     attempts.append(exc.as_dict())
-                    if exc.retryable and attempt < max_attempts:
+                    if exc.retryable and attempt < max_attempts and not _model_is_full(exc):
                         time.sleep(min(0.25 * (2 ** (attempt - 1)), 2.0))
                         continue
                     break

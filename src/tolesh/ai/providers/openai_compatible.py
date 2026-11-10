@@ -159,14 +159,19 @@ class OpenAICompatibleProvider(AIProvider):
             raw = b""
         body = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
         detail = body[:300]
+        code: str | None = None
         try:
             payload = json.loads(body)
             if isinstance(payload, dict):
                 err = payload.get("error")
                 if isinstance(err, dict) and err.get("message"):
                     detail = str(err["message"])[:300]
+                    if err.get("code"):
+                        code = str(err["code"])
                 elif payload.get("message"):
                     detail = str(payload["message"])[:300]
+                    if payload.get("code"):
+                        code = str(payload["code"])
         except Exception:
             pass
         raise ProviderError(
@@ -175,6 +180,7 @@ class OpenAICompatibleProvider(AIProvider):
             retryable=response.status_code in _RETRYABLE_STATUS,
             status=response.status_code,
             retry_after=_retry_after(response),
+            code=code,
         )
 
     def _client(self, timeout: float):

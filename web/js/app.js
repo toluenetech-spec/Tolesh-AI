@@ -212,6 +212,17 @@ function renderComposerNote(health) {
   // "Configured" is the honest word: a provider can be listed here and still be
   // unreachable (Ollama has a default URL and no key), which is what the
   // per-provider connection test is for.
+  //
+  // The chain comes from /api/health so the line states the real fallback plan
+  // (DeepSeek → GLM → MiniMax) instead of hiding it behind "a sibling model".
+  const chain = (health?.fallback_order || [])
+    .filter((id) => !String(id).startsWith('offline:'));
+  if (chain.length > 1) {
+    const shown = chain.slice(0, 3).map(modelLabel).join(' → ');
+    const rest = chain.length > 3 ? `, then ${chain.length - 3} more` : '';
+    el.textContent = `Configured: ${real.join(', ')} · tries ${shown}${rest}, in that order.`;
+    return;
+  }
   el.textContent = `Configured: ${real.join(', ')} · the router starts with ${target} `
     + 'and falls back to a sibling model if it fails.';
 }

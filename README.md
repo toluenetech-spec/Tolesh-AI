@@ -106,11 +106,16 @@ The gateway's free tier is queued behind paid traffic, so a busy model answers
 `429 {"error":{"code":"model_concurrency", ...}}` and names the models that are
 free at that moment. Tolesh handles this honestly rather than hiding it:
 
-* the failing model is named in the stream (`provider_error` with `status: 429`
-  and the endpoint's own `Retry-After`),
-* the router then tries the other Dahl models before any other vendor,
+* the failing model is named in the stream (`provider_error` with `status: 429`,
+  the gateway's `code` and its own `Retry-After`),
+* the router then tries the other Dahl models before any other vendor, in the
+  order **DeepSeek V4 Flash → GLM-5.3 Flash → MiniMax M2.7**,
+* a model that reports `model_concurrency` is **not retried**: the gateway is
+  saying "this model is full, use another one", so Tolesh switches immediately
+  instead of sleeping through backoff the user can hear,
 * if the answer came from a different model, the bubble says so
-  (`MiniMax M2.7 · fallback`),
+  (`GLM-5.3 Flash · fallback`), and the line under the composer names the chain
+  the router will actually try (`/api/health` → `fallback_order`),
 * a connection test reports per-model results instead of one pass/fail.
 
 Optional hardening: `TOLESH_API_TOKEN` gates every `/api` route except
