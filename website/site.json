@@ -1,7 +1,8 @@
 {
   "name": "Tolesh",
   "base_url": "https://barissencan.com/tolesh/",
-  "repository": "https://github.com/isair/jarvis",
+  "repository": "https://github.com/tolesh-ai/tolesh",
+  "upstream_repository": "https://github.com/isair/jarvis",
   "summary": "Tolesh is a local AI assistant for macOS, Windows and Linux. Talk naturally, chat by text, remember past conversations and dictate into other apps, with models and memory on hardware you control.",
   "pages": [
     {

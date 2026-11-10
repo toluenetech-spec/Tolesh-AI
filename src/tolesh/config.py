@@ -94,8 +94,18 @@ def _default_dictation_hotkey() -> str:
         return "ctrl+alt"
 
 
+def default_data_dir() -> Path:
+    """Directory for Tolesh's mutable user data (database, caches).
+
+    Re-exported from :mod:`tolesh._sqlite` so the desktop app, the embedded
+    API server and the inherited daemon cannot drift onto different files.
+    """
+    from ._sqlite import default_data_dir as _resolve
+    return _resolve()
+
+
 def _default_db_path() -> str:
-    base = Path.home() / ".local" / "share" / "tolesh"
+    base = default_data_dir()
     base.mkdir(parents=True, exist_ok=True)
     return str(base / "tolesh.db")
 
@@ -571,7 +581,11 @@ def get_default_config() -> Dict[str, Any]:
 
         # Wake Word Detection
         "wake_word": "tolesh",
-        "wake_aliases": ["joris", "charis", "chavis", "jar is", "jaivis", "jervis", "jarvus", "jarviz", "javis", "jairus", "jarryst", "chyrus"],
+        # Tolesh mishearings. The inherited list was entirely JARVIS variants
+        # ("joris", "jarvus", "jar is", ...) and survived the rebrand, which
+        # meant Tolesh could not recognise common mispronunciations of his own
+        # name while still waking on JARVIS-era words. Replaced wholesale.
+        "wake_aliases": ["tolash", "tollesh", "toresh", "tolish", "talesh", "to lesh", "tolosh", "toleshh", "toles", "tolesht", "toleshie", "taresh"],
         "wake_fuzzy_ratio": 0.78,
 
         # Whisper Speech Recognition

@@ -176,10 +176,23 @@ def test_native_hub_byte_progress_reaches_non_terminal_desktop(monkeypatch):
     """Exercise the installed Hub HTTP transport without network or model data."""
     from desktop_app import app  # Configures non-terminal progress before daemon launch.
     from huggingface_hub.file_download import http_get
+    import huggingface_hub.file_download as file_download
     from unittest.mock import Mock
     response = Mock(status_code=200, headers={"Content-Length": "1000000"})
-    response.iter_content.return_value = [b"x" * 1_000_000]
-    monkeypatch.setattr("huggingface_hub.file_download._request_wrapper", lambda **kw: response)
+    # huggingface_hub >=1.0 streams through ``http_stream_backoff`` (a context
+    # manager yielding an httpx response read with ``iter_bytes``). Older
+    # releases used ``_request_wrapper`` plus ``iter_content``. Stub whichever
+    # transport is actually installed: the assertions below still verify the
+    # same product behaviour — byte progress reaching a non-terminal stderr.
+    if hasattr(file_download, "http_stream_backoff"):
+        response.iter_bytes.return_value = [b"x" * 1_000_000]
+        stream = Mock()
+        stream.__enter__ = Mock(return_value=response)
+        stream.__exit__ = Mock(return_value=False)
+        monkeypatch.setattr(file_download, "http_stream_backoff", lambda **kw: stream)
+    else:
+        response.iter_content.return_value = [b"x" * 1_000_000]
+        monkeypatch.setattr("huggingface_hub.file_download._request_wrapper", lambda **kw: response)
     lines = []
     monkeypatch.setattr("sys.stderr", LogStream(lines.append))
     destination = io.BytesIO()

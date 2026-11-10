@@ -424,7 +424,7 @@ class ChatWindow(QMainWindow):
             button.clicked.connect(callback)
         title_layout.addWidget(self.minimise_button)
         title_layout.addStretch()
-        capsule = QLabel('J A R V I S  /  CHAT')
+        capsule = QLabel('T O L E S H  /  CHAT')
         capsule.setObjectName('chatCapsule')
         capsule.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         title_layout.addWidget(capsule)

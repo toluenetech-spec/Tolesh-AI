@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-REM Run Jarvis evaluation suite on Windows
+REM Run Tolesh evaluation suite on Windows
 REM
 REM Usage:
 REM   run_evals.bat              Run all evals with both models (live + judge enabled)
@@ -50,7 +50,7 @@ set "MODEL_LARGE=gpt-oss:20b"
 
 echo.
 echo +------------------------------------------------------------+
-echo ^|                  Jarvis Evaluation Suite                   ^|
+echo ^|                  Tolesh Evaluation Suite                   ^|
 echo +------------------------------------------------------------+
 echo.
 
@@ -154,7 +154,7 @@ if "!MULTI_MODEL!"=="true" if "!OLLAMA_AVAILABLE!"=="true" set "RUN_MULTI=true"
 if "!RUN_MULTI!"=="true" (
     echo   Running evals with both supported models for comparison
 
-    set "TEMP_DIR=%TEMP%\jarvis_evals_%RANDOM%_%RANDOM%"
+    set "TEMP_DIR=%TEMP%\tolesh_evals_%RANDOM%_%RANDOM%"
     mkdir "!TEMP_DIR!" >nul 2>&1
 
     set "EVAL_REPORT_PATH=!TEMP_DIR!\evals_small.md"

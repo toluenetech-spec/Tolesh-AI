@@ -3,8 +3,17 @@
 import importlib
 import os
 import sys
+from pathlib import Path
 
 import pytest
+
+# Keep sibling test helpers importable (e.g. ``from test_hot_window_input
+# import ...``) while ``tests`` is also a package (``tests.performance``).
+# The upstream suite relied on pytest's legacy prepend mode for the former;
+# adding tests/__init__.py fixed the latter but changed the import mode.
+_TESTS_DIR = str(Path(__file__).resolve().parent / "tests")
+if Path(_TESTS_DIR).is_dir() and _TESTS_DIR not in sys.path:
+    sys.path.insert(0, _TESTS_DIR)
 
 
 _audio_attempts: set[str] = set()

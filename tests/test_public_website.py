@@ -70,7 +70,7 @@ def builder():
 
 @pytest.mark.parametrize('base', [
     'https://barissencan.com/tolesh/',
-    'https://isair.github.io/jarvis/',
+    'https://tolesh-ai.github.io/tolesh/',
     'https://tolesh.example.org/',
 ])
 def test_pages_have_readable_content_and_consistent_discovery_metadata(builder, tmp_path, base):
@@ -158,7 +158,7 @@ def test_build_refuses_to_overwrite_or_publish_unrelated_files(builder, tmp_path
 
 def test_rebuild_updates_all_canonical_urls_and_protects_added_files(builder, tmp_path):
     output = tmp_path / 'site'
-    builder.build_site(output, base_url='https://isair.github.io/jarvis/')
+    builder.build_site(output, base_url='https://tolesh-ai.github.io/tolesh/')
     builder.build_site(output, base_url='https://barissencan.com/tolesh/')
     assert 'https://isair.github.io' not in (output / 'sitemap.xml').read_text()
     unrelated = output / 'unrelated.txt'

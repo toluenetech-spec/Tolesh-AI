@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0D0C0A" />
+  <title>Tolesh — your personal AI assistant</title>
+  <meta name="description" content="Tolesh: a private, local-first AI assistant with a provider-independent model router, transparent memory and permission-gated computer control." />
+  <link rel="icon" href="./assets/tolesh-mark.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles/fonts.css" />
+  <link rel="stylesheet" href="./styles/tokens.css" />
+  <link rel="stylesheet" href="./styles/app.css" />
+</head>
+<body>
+  <a class="skip-link" href="#mainView">Skip to conversation</a>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- Single consistent icon set (24x24, stroke). No emoji icons. -->
+  <svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 3v-4.4A7.5 7.5 0 0 1 4 11.5 7.5 7.5 0 0 1 11.5 4h1A7.5 7.5 0 0 1 20 11.5Z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" stroke-linecap="round" stroke-width="2.2"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m4 12 16-8-6 8 6 8-16-8Z"/><path d="m14 12 6-8"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2.5 20 6v6c0 5-3.5 8-8 9.5C7.5 20 4 17 4 12V6l8-3.5Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01" stroke-linecap="round" stroke-width="2.2"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <!-- ------------------------------------------------------------- rail -->
+    <nav class="rail" aria-label="Primary navigation">
+      <a class="brand" href="#mainView" aria-label="Tolesh home">
+        <span class="brand-mark" aria-hidden="true">T</span>
+        <span class="brand-word" translate="no">Tolesh</span>
+      </a>
+
+      <div class="rail-nav">
+        <button class="rail-item is-active" data-view="chat" aria-current="true" title="Chat">
+          <svg class="icon" aria-hidden="true"><use href="#i-chat" /></svg><span class="rail-label">Chat</span>
+        </button>
+        <button class="rail-item" data-view="memory" title="Memory">
+          <svg class="icon" aria-hidden="true"><use href="#i-layers" /></svg><span class="rail-label">Memory</span>
+        </button>
+        <button class="rail-item" data-view="tools" title="Computer control">
+          <svg class="icon" aria-hidden="true"><use href="#i-grid" /></svg><span class="rail-label">Tools</span>
+        </button>
+        <button class="rail-item" data-view="settings" title="Settings">
+          <svg class="icon" aria-hidden="true"><use href="#i-sliders" /></svg><span class="rail-label">Settings</span>
+        </button>
+      </div>
+
+      <div class="rail-bottom">
+        <button class="voice-orb" id="voiceOrb" aria-label="Start a voice conversation" title="Voice conversation">
+          <span class="orb-ring orb-ring-1" aria-hidden="true"></span>
+          <span class="orb-ring orb-ring-2" aria-hidden="true"></span>
+          <svg class="icon" aria-hidden="true"><use href="#i-mic" /></svg>
+        </button>
+        <p class="orb-caption" id="orbCaption">Voice</p>
+        <div class="connection" id="connection" title="Backend connection">
+          <span class="connection-dot"></span><span class="connection-text">connecting</span>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ------------------------------------------------------------- main -->
+    <main class="main" id="mainView" tabindex="-1">
+      <header class="topbar">
+        <div class="topbar-left">
+          <p class="eyebrow">TOLESH <span class="eyebrow-sep">/</span> PERSONAL AI</p>
+          <h1 class="conversation-title" id="convTitle">New conversation</h1>
+        </div>
+        <div class="topbar-right">
+          <div id="modelSelector" class="model-selector"></div>
+          <button class="icon-btn context-toggle" id="contextToggle" aria-label="Toggle context panel" aria-expanded="true" aria-controls="contextPanel" title="Context">
+            <svg class="icon" aria-hidden="true"><use href="#i-panel" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="stream" id="stream" aria-label="Conversation" aria-live="off">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-rule" aria-hidden="true"></div>
+          <h2 class="empty-title">Good <span id="greetingWord">evening</span>.</h2>
+          <p class="empty-sub">Talk to me anyhow — English, Pidgin or Yoruba. I'll keep it honest, and I'll keep your data yours.</p>
+          <div class="suggestions" id="suggestions"></div>
+        </div>
+        <ol class="messages" id="messages" aria-label="Messages"></ol>
+      </section>
+
+      <footer class="composer-wrap">
+        <p class="stream-status" id="streamStatus" role="status" aria-live="polite"></p>
+        <form class="composer" id="composer">
+          <label class="sr-only" for="input">Message Tolesh</label>
+          <textarea id="input" name="message" rows="1" placeholder="Talk to Tolesh…" autocomplete="off" spellcheck="true"></textarea>
+          <div class="composer-actions">
+            <button type="button" class="icon-btn mic-btn" id="voiceBtn" aria-label="Speak instead of typing" title="Speak">
+              <svg class="icon" aria-hidden="true"><use href="#i-mic" /></svg>
+            </button>
+            <p class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</p>
+            <button type="submit" class="send-btn" id="sendBtn">
+              <span>Send</span><svg class="icon" aria-hidden="true"><use href="#i-send" /></svg>
+            </button>
+          </div>
+        </form>
+        <p class="composer-footnote" id="composerFootnote">Keys stay on your machine. Nothing is sent to a model until you connect a provider.</p>
+      </footer>
+    </main>
+
+    <!-- ---------------------------------------------------------- context -->
+    <aside class="context" id="contextPanel" aria-label="Context and controls">
+      <div class="context-head">
+        <div>
+          <p class="eyebrow">CONTEXT</p>
+          <h2 class="context-title">What Tolesh knows</h2>
+        </div>
+        <button class="icon-btn" id="contextClose" aria-label="Close context panel"><svg class="icon" aria-hidden="true"><use href="#i-close" /></svg></button>
+      </div>
+
+      <div class="context-scroll">
+        <section class="panel-section" aria-labelledby="h-status">
+          <div class="panel-head"><h3 id="h-status">Engine</h3><span class="panel-badge" id="engineBadge">—</span></div>
+          <div class="engine-grid" id="engineGrid"></div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="h-perm">
+          <div class="panel-head"><h3 id="h-perm">Approvals</h3><span class="count" id="permCount">0</span></div>
+          <div id="permissionList" class="permission-list"></div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="h-memory">
+          <div class="panel-head">
+            <h3 id="h-memory">Memory</h3>
+            <button class="text-btn" id="addMemoryBtn"><svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg> Add</button>
+          </div>
+          <p class="panel-note">Everything stored about you, grouped by kind. Delete any item — or all of it.</p>
+          <div class="memory-filters" id="memoryFilters" role="group" aria-label="Filter memory"></div>
+          <div id="memoryList" class="memory-list"></div>
+          <button class="danger-link" id="forgetBtn">Forget everything</button>
+        </section>
+
+        <section class="panel-section" aria-labelledby="h-providers">
+          <div class="panel-head"><h3 id="h-providers">Providers</h3><span class="count" id="providerCount">0</span></div>
+          <p class="panel-note">Keys are read from your environment, never stored in the app.</p>
+          <div id="providerList" class="provider-list"></div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="h-usage">
+          <div class="panel-head"><h3 id="h-usage">Usage</h3></div>
+          <div class="usage-grid" id="usageGrid"></div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="h-tools">
+          <div class="panel-head"><h3 id="h-tools">Computer control</h3></div>
+          <p class="panel-note">Safe actions run directly. Anything consequential needs your approval first.</p>
+          <div id="toolList" class="tool-list"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+  <div id="dialogRoot"></div>
+  <div class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"></div>
+
+  <script src="./vendor/gsap.min.js"></script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

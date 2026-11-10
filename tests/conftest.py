@@ -214,10 +214,40 @@ def _isolate_daemon_lock(tmp_path, monkeypatch):
 
 @pytest.fixture
 def no_network(monkeypatch):
-    """Opt-in guard for tests that require every dependency to stay in-process."""
+    """Opt-in guard for tests that require every dependency to stay in-process.
+
+    Only *network* sockets (AF_INET / AF_INET6) are blocked. Local IPC is
+    deliberately allowed, because it is not an outbound connection:
+
+    * AF_UNIX sockets — the X11 display connection that ``pynput`` opens while
+      its keyboard backend is imported uses ``/tmp/.X11-unix/X<n>``. Blocking
+      it made ``dictation_engine`` cache ``pynput_keyboard = None`` for the
+      whole session, which surfaced much later as an unrelated-looking
+      ``RuntimeError("pynput is not installed")`` in dictation tests.
+    * The X11 *TCP fallback* — when the unix socket is absent (no X server on
+      this machine, only ``DISPLAY=:0`` in the environment) libxcb retries the
+      same display over loopback on port ``6000 + display``. That is still a
+      display connection, not a network request, so it must not be counted as
+      an unmocked attempt.
+    """
+    import os
+    import re
     import socket
 
     attempts = []
+    original_connect = socket.socket.connect
+    original_connect_ex = socket.socket.connect_ex
+
+    def x11_tcp_targets() -> set:
+        """Loopback addresses libxcb uses for the current X display."""
+        display = os.environ.get("DISPLAY", "")
+        match = re.match(r"^(?P<host>[^:]*):(?P<num>\d+)(?:\.\d+)?$", display)
+        if not match:
+            return set()
+        if match.group("host") not in ("", "unix", "localhost", "127.0.0.1", "::1"):
+            return set()
+        port = 6000 + int(match.group("num"))
+        return {("", port), ("localhost", port), ("127.0.0.1", port), ("::1", port)}
 
     def blocked(sock, address):
         attempts.append(address)
@@ -229,12 +259,22 @@ def no_network(monkeypatch):
         attempts.append("native HTTP request")
         raise AssertionError("Offline test attempted a native network connection")
 
+    def guard(original):
+        def wrapped(sock, address, *args, **kwargs):
+            # Local IPC (X11, D-Bus, ...) is not an outbound network connection.
+            if getattr(sock, "family", None) == socket.AF_UNIX:
+                return original(sock, address, *args, **kwargs)
+            if address in x11_tcp_targets():
+                return original(sock, address, *args, **kwargs)
+            return blocked(sock, address)
+        return wrapped
+
     # Minimal dependency jobs cannot load the optional native client.
     if find_spec("curl_cffi") is not None:
         from curl_cffi.requests import Session
         monkeypatch.setattr(Session, "request", blocked_native)
-    monkeypatch.setattr(socket.socket, "connect", blocked)
-    monkeypatch.setattr(socket.socket, "connect_ex", blocked)
+    monkeypatch.setattr(socket.socket, "connect", guard(original_connect))
+    monkeypatch.setattr(socket.socket, "connect_ex", guard(original_connect_ex))
     yield
     assert not attempts, f"Unmocked network attempts: {attempts}"
 

@@ -527,6 +527,12 @@ class TestPasteActivationSuppression:
         import importlib
         import tolesh.dictation.dictation_engine as de
         importlib.reload(de)  # ensures _MODIFIER_MAP is populated
+        # A reload re-runs the module-level pynput import. In a headless test
+        # process that import can fail, leaving pynput_keyboard=None on the
+        # shared module and poisoning every later DictationEngine() in this
+        # file. Restore the real backend we just imported successfully.
+        if getattr(de, "pynput_keyboard", None) is None:
+            de.pynput_keyboard = keyboard
         return (
             keyboard.Key.ctrl_l,
             keyboard.Key.shift,

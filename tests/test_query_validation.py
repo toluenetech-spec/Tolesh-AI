@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
     ('Tolesh set a timer for five minutes', True, [], True),
     ('How are you doing today?', True, [], False),
     ('I told my friend about Tolesh yesterday', False, [], False),
-    ('Jairus log a burger please', True, ['jairus'], True),
+    ('Toresh log a burger please', True, ['toresh'], True),
 ])
 def test_current_wake_signal_and_decision_control_acceptance(heard, directed, aliases, accepted):
     listener, _ = _create_listener()

@@ -26,7 +26,7 @@ def test_each_configured_alias_remains_a_valid_address(alias):
 
 
 @pytest.mark.parametrize('name,alias,near_primary', [
-    ('tolesh', 'joris', 'jarvas'),
+    ('tolesh', 'tolash', 'tollesh'),
     ('friday', 'computer', 'fridai'),
 ])
 def test_primary_approximation_and_exact_alias_remain_usable(name, alias, near_primary):
@@ -64,7 +64,7 @@ def test_request_preservation_keeps_names_inside_other_words(text, expected):
 
 
 def test_explicit_fuzzy_threshold_is_respected():
-    assert not is_wake_word_detected('jarvas hello', 'tolesh', ['joris'], fuzzy_ratio=1.0)
+    assert not is_wake_word_detected('tollesh hello', 'tolesh', ['tolash'], fuzzy_ratio=1.0)
 
 
 @pytest.mark.parametrize('name', ['Frédérique', 'Αθηνά', 'Müller'])

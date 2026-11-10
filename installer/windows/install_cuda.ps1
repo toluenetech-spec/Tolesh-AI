@@ -18,7 +18,7 @@
     Invoked by the Inno Setup installer when the user opts into GPU
     acceleration, by the tray-menu recovery action, or manually:
         powershell -ExecutionPolicy Bypass -File install_cuda.ps1 `
-            -TargetDir "C:\Program Files\Jarvis\cuda"
+            -TargetDir "C:\Program Files\Tolesh\cuda"
 
 .PARAMETER TargetDir
     Directory to extract CUDA DLLs into (e.g. {app}\cuda).

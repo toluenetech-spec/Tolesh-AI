@@ -385,7 +385,7 @@ def test_transcript_keeps_capture_generation_across_buffer_storage(synthetic_lis
 
 
 @pytest.mark.parametrize('text', [
-    "I'm talking to Jairus not you.",
+    "I'm talking to Toresh not you.",
     "I'm talking to Tolesh, not you.",
     "I told my friend about Tolesh yesterday.",
     "Tolesh'le konuşuyorum, seninle değil.",
@@ -417,8 +417,8 @@ def test_direct_address_and_inconclusive_fallback_remain_usable(synthetic_listen
 @pytest.mark.parametrize('text,accepted', [
     ("Doesn't matter if her oppresses A, first joins", False),
     ('the first person joins the game', False),
-    ('Jairus what time is it', True),
-    ('Jarvas what time is it', True),
+    ('Toresh what time is it', True),
+    ('Tollesh what time is it', True),
 ])
 def test_whole_alias_gate_keeps_ambient_words_out_of_reply_collection(synthetic_listener, text, accepted):
     from tolesh.listening.intent_judge import IntentJudgment

@@ -430,18 +430,18 @@ MULTI_SEGMENT_TEST_CASES = [
         expected_directed=True,
     ),
     # Alias (Whisper mishearing) should be treated as the wake word. Without
-    # alias normalisation the small model sees "Jervis" and decides the user
+    # alias normalisation the small model sees "Tolish" and decides the user
     # is addressing a different person.
     MultiSegmentTestCase(
         name="alias_treated_as_wake_word",
         segments=[
-            ("Jervis, what time is it in London?", False),
+            ("Tolish, what time is it in London?", False),
         ],
         last_tts_text="",
         in_hot_window=False,
         wake_timestamp=1000.8,
         expected_directed=True,
-        aliases=["jervis", "jaivis", "jervis", "javis"],
+        aliases=["tolish", "talesh", "tolish", "toles"],
     ),
     # Alias mid-utterance after narrative context — the model must still
     # recognise the addressee as the assistant and resolve the vague reference.
@@ -450,13 +450,13 @@ MULTI_SEGMENT_TEST_CASES = [
         segments=[
             ("The new iPhone looks pretty cool", False),
             ("I heard the camera is amazing", False),
-            ("Jaivis how much does that cost", False),
+            ("Talesh how much does that cost", False),
         ],
         last_tts_text="",
         in_hot_window=False,
         wake_timestamp=1004.0,
         expected_directed=True,
-        aliases=["jervis", "jaivis", "jervis", "javis"],
+        aliases=["tolish", "talesh", "tolish", "toles"],
     ),
     # Buried target sentence amid interleaved unrelated chatter (multi-topic
     # disambiguation). Two separate topics coexist in the buffer — iPhone
@@ -660,13 +660,13 @@ def is_intent_judge_available() -> bool:
 
 # Addressing another person about the assistant is a mention, including aliases.
 MENTION_ADDRESS_CASES = [
-    ("partner_alias", "I'm talking to Jairus not you.", False, ["jairus"]),
+    ("partner_alias", "I'm talking to Toresh not you.", False, ["toresh"]),
     ("partner_primary", "I'm talking to Tolesh, not you.", False, []),
     ("partner_question", "Did you think I was talking to you? I'm talking to Tolesh, not you.", False, []),
     ("partner_turkish", "Tolesh'le konuşuyorum, seninle değil.", False, []),
     ("partner_spanish", "Estoy hablando con Tolesh, no contigo.", False, []),
     ("direct_statement", "Tolesh, I'm feeling tired today.", True, []),
-    ("direct_alias", "Jairus, what time is it?", True, ["jairus"]),
+    ("direct_alias", "Toresh, what time is it?", True, ["toresh"]),
     ("direct_about_assistant", "Tolesh, tell me about yourself.", True, []),
     ("direct_hearing", "Tolesh, can you hear me?", True, []),
 ]

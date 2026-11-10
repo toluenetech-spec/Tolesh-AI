@@ -2,7 +2,7 @@ Param()
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Info($msg) { Write-Host "[jarvis] $msg" }
+function Write-Info($msg) { Write-Host "[tolesh] $msg" }
 
 # Repo root
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -11,7 +11,7 @@ Set-Location $REPO_ROOT
 
 # Helper to set env vars for the current process
 $env:PYTHONPATH = Join-Path $REPO_ROOT 'src'
-if (-not $env:JARVIS_VOICE_DEBUG) { $env:JARVIS_VOICE_DEBUG = '0' }
+if (-not $env:TOLESH_VOICE_DEBUG) { $env:TOLESH_VOICE_DEBUG = '0' }
 
 # Prefer micromamba for pre-built dependencies (webrtcvad, av, etc.)
 $micromamba = Get-Command micromamba -ErrorAction SilentlyContinue
@@ -34,12 +34,12 @@ if ($micromamba) {
   $envPython = Join-Path $envPrefix 'python.exe'
   if (Test-Path $envPython) {
     Write-Info 'Starting daemon...'
-    & $envPython -m jarvis.daemon
+    & $envPython -m tolesh.daemon
     exit $LASTEXITCODE
   } else {
     # Fallback to micromamba run if python.exe is not found for some reason
     Write-Info 'Starting daemon (fallback via micromamba run)...'
-    micromamba run -p $envPrefix python -m jarvis.daemon
+    micromamba run -p $envPrefix python -m tolesh.daemon
     exit $LASTEXITCODE
   }
 }
@@ -58,6 +58,6 @@ Write-Info 'Installing Python requirements with pip...'
 & $venvPython -m pip install -r requirements.txt
 
 Write-Info 'Starting daemon...'
-& $venvPython -m jarvis.daemon
+& $venvPython -m tolesh.daemon
 
 

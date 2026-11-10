@@ -123,13 +123,13 @@ class TestIntentJudge:
         """Aliases (Whisper variants) are replaced with the assistant name in the prompt."""
         config = IntentJudgeConfig(
             assistant_name="Tolesh",
-            aliases=["jervis", "jaivis", "jar is"],
+            aliases=["tolish", "talesh", "to lesh"],
         )
         judge = IntentJudge(config)
         segments = [
-            TranscriptSegment("Jervis what time is it", 1000.0, 1001.0),
-            TranscriptSegment("Jaivis tell me a joke", 1002.0, 1003.0),
-            TranscriptSegment("hey Jar is, are you there", 1004.0, 1005.0),
+            TranscriptSegment("Tolish what time is it", 1000.0, 1001.0),
+            TranscriptSegment("Talesh tell me a joke", 1002.0, 1003.0),
+            TranscriptSegment("hey To lesh, are you there", 1004.0, 1005.0),
         ]
         prompt = judge._build_user_prompt(
             segments,
@@ -138,9 +138,9 @@ class TestIntentJudge:
             last_tts_finish_time=0.0,
             in_hot_window=False,
         )
-        assert "Jervis" not in prompt
-        assert "Jaivis" not in prompt
-        assert "Jar is" not in prompt
+        assert "Tolish" not in prompt
+        assert "Talesh" not in prompt
+        assert "To lesh" not in prompt
         # Each aliased segment is rewritten to use the primary wake word.
         assert prompt.count("Tolesh") >= 3
 
@@ -177,7 +177,7 @@ class TestIntentJudge:
         """With no aliases configured, segment text is passed through unchanged."""
         config = IntentJudgeConfig(assistant_name="Tolesh", aliases=[])
         judge = IntentJudge(config)
-        segments = [TranscriptSegment("Jervis what time", 1000.0, 1001.0)]
+        segments = [TranscriptSegment("Tolish what time", 1000.0, 1001.0)]
         prompt = judge._build_user_prompt(
             segments,
             wake_timestamp=None,
@@ -185,7 +185,7 @@ class TestIntentJudge:
             last_tts_finish_time=0.0,
             in_hot_window=False,
         )
-        assert "Jervis" in prompt
+        assert "Tolish" in prompt
 
     def test_build_user_prompt_with_tts(self):
         """User prompt includes TTS info."""

@@ -1,5 +1,5 @@
 @echo off
-REM Run script for the Jarvis Desktop App on Windows
+REM Run script for the Tolesh Desktop App on Windows
 REM Uses the project's mamba environment
 REM Usage: run_desktop_app.bat [--voice-debug]
 
@@ -16,7 +16,7 @@ shift
 goto parse_args
 :done_args
 
-echo Testing Jarvis Desktop App locally...
+echo Testing Tolesh Desktop App locally...
 if "%VOICE_DEBUG%"=="1" (
     echo    Voice debug: ENABLED
 )
@@ -69,7 +69,7 @@ echo.
 
 REM Set voice debug environment variable if requested
 if "%VOICE_DEBUG%"=="1" (
-    set "JARVIS_VOICE_DEBUG=1"
+    set "TOLESH_VOICE_DEBUG=1"
 )
 
 "%MAMBA_ENV%\python.exe" -m desktop_app

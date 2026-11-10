@@ -2,7 +2,7 @@
 REM Test script to build and run the bundled Windows app locally
 
 echo.
-echo === Building Jarvis Desktop App with PyInstaller ===
+echo === Building Tolesh Desktop App with PyInstaller ===
 echo.
 
 REM Get to project root
@@ -29,19 +29,19 @@ echo.
 
 REM Build with PyInstaller
 echo Building app bundle...
-"%MAMBA_ENV%\python.exe" -m PyInstaller jarvis_desktop.spec
+"%MAMBA_ENV%\python.exe" -m PyInstaller tolesh_desktop.spec
 echo.
 
 REM Check if build succeeded
-if exist "dist\Jarvis.exe" (
+if exist "dist\Tolesh.exe" (
     echo Build successful!
     echo.
-    echo App location: %cd%\dist\Jarvis.exe
+    echo App location: %cd%\dist\Tolesh.exe
     echo.
 
     REM Show file info
     echo File info:
-    dir dist\Jarvis.exe
+    dir dist\Tolesh.exe
     echo.
 
     REM Run the app
@@ -49,7 +49,7 @@ if exist "dist\Jarvis.exe" (
     echo    Press Ctrl+C in this window to stop the app
     echo.
 
-    dist\Jarvis.exe
+    dist\Tolesh.exe
 
     echo.
     echo App exited.

@@ -28,7 +28,7 @@ from tolesh.debug import debug_log
 from .paths import get_log_dir
 from .qt_worker import KeepAliveWorker
 
-GITHUB_REPO = "isair/jarvis"
+GITHUB_REPO = ""  # Tolesh: no upstream release feed; auto-update disabled until a Tolesh release repo exists
 # Absolute path to macOS's ditto tool. Exposed as a module attribute so
 # tests (which run on non-macOS CI runners without /usr/bin/ditto) can
 # substitute a path that exists.
@@ -606,6 +606,58 @@ rmdir /s /q "{escaped_temp}"
         return False
 
 
+def _extract_update_archive(tf, dest: Path) -> None:
+    """Extract an untrusted update archive with ``data`` filter semantics.
+
+    ``TarFile.extractall(filter="data")`` (Python 3.11.4+ / 3.12) is what
+    makes Linux updates safe: it rejects absolute member names, ``..``
+    traversal, links that escape the archive and special files. Some desktop
+    runtimes still ship Python 3.11.0-3.11.3, whose ``tarfile`` has no
+    ``filter`` keyword at all — calling it raises ``TypeError``, which used to
+    be swallowed as a generic update failure and silently disabled updates.
+    Rather than extracting unvalidated members there, reproduce the
+    equivalent containment checks member by member.
+    """
+    import inspect
+    import tarfile
+
+    if "filter" in inspect.signature(tarfile.TarFile.extractall).parameters:
+        tf.extractall(dest, filter="data")
+        return
+
+    dest_root = os.path.realpath(dest)
+
+    def _inside(path: str) -> bool:
+        resolved = os.path.realpath(path)
+        return os.path.commonpath([dest_root, resolved]) == dest_root
+
+    for member in tf.getmembers():
+        name = member.name
+        if os.path.isabs(name) or not _inside(os.path.join(dest_root, name)):
+            raise ValueError(f"unsafe member path in update archive: {name}")
+
+        if member.issym():
+            # Symlink targets resolve relative to the link's own directory.
+            target = member.linkname
+            if os.path.isabs(target) or not _inside(
+                os.path.join(dest_root, os.path.dirname(name), target)
+            ):
+                raise ValueError(f"escaping symlink in update archive: {name}")
+        elif member.islnk():
+            # Hard-link targets resolve relative to the archive root.
+            target = member.linkname
+            if os.path.isabs(target) or not _inside(os.path.join(dest_root, target)):
+                raise ValueError(f"escaping hardlink in update archive: {name}")
+        elif not (member.isfile() or member.isdir()):
+            raise ValueError(f"unsupported member type in update archive: {name}")
+
+        # Re-check after earlier symlinks have been created on disk: a
+        # benign-looking path can otherwise be redirected outside dest_root.
+        if not _inside(os.path.join(dest_root, name)):
+            raise ValueError(f"member resolves outside update archive: {name}")
+        tf.extract(member, dest)
+
+
 def install_update_linux(download_path: Path) -> bool:
     """Install update on Linux.
 
@@ -626,7 +678,7 @@ def install_update_linux(download_path: Path) -> bool:
 
     try:
         with tarfile.open(download_path, "r:gz") as tf:
-            tf.extractall(temp_dir, filter="data")
+            _extract_update_archive(tf, temp_dir)
 
         new_app_dir = temp_dir / "Tolesh"
 

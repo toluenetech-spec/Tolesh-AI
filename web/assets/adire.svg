@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <!-- Adire-inspired indigo resist-dye grid motif. Used as a very low-opacity
+       atmospheric texture, not as a decorative border. -->
+  <g fill="none" stroke="#3A4C7A" stroke-width="1.1" opacity="0.9">
+    <path d="M0 40h240M0 80h240M0 120h240M0 160h240M0 200h240"/>
+    <path d="M40 0v240M80 0v240M120 0v240M160 0v240M200 0v240"/>
+  </g>
+  <g fill="none" stroke="#5C6FA0" stroke-width="1.4">
+    <circle cx="40" cy="40" r="13"/><circle cx="120" cy="40" r="13"/><circle cx="200" cy="40" r="13"/>
+    <circle cx="80" cy="120" r="13"/><circle cx="160" cy="120" r="13"/>
+    <circle cx="40" cy="200" r="13"/><circle cx="120" cy="200" r="13"/><circle cx="200" cy="200" r="13"/>
+    <path d="M40 27v26M27 40h26M120 27v26M107 40h26M200 27v26M187 40h26"/>
+    <path d="M80 107v26M67 120h26M160 107v26M147 120h26"/>
+  </g>
+  <g fill="#3A4C7A">
+    <circle cx="80" cy="40" r="3.2"/><circle cx="160" cy="40" r="3.2"/>
+    <circle cx="40" cy="120" r="3.2"/><circle cx="120" cy="120" r="3.2"/><circle cx="200" cy="120" r="3.2"/>
+    <circle cx="80" cy="200" r="3.2"/><circle cx="160" cy="200" r="3.2"/>
+  </g>
+</svg>

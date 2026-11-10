@@ -349,14 +349,14 @@ def test_current_request_alone_does_not_create_ambient_references():
 def test_reference_snapshot_excludes_current_segment_and_unused_aliases():
     import json
     from tolesh.listening.speech_context import SpeechContext
-    request = 'Jairus how much does it cost'
+    request = 'Toresh how much does it cost'
     context = SpeechContext.capture([TranscriptSegment('Copper lantern', 1, 2),
                                     TranscriptSegment(request, 3, 4, processed=True)],
-                                    current_text=request, assistant_names=('Tolesh', 'Jairus', 'Unused'))
+                                    current_text=request, assistant_names=('Tolesh', 'Toresh', 'Unused'))
     data = json.loads(context.render().split('<<<BEGIN TRANSCRIPT>>>\n')[1].split('\n<<<END TRANSCRIPT>>>')[0])
     assert request not in context.render()
     assert [item['text'] for item in data['transcript']] == ['Copper lantern']
-    assert data['assistant_names'] == ['Tolesh', 'Jairus']
+    assert data['assistant_names'] == ['Tolesh', 'Toresh']
 
 
 def test_step_resolution_retains_count_missing_from_a_shortened_plan(mock_config):

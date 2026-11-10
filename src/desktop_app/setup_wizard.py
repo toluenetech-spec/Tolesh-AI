@@ -512,7 +512,7 @@ class ScrollableWizardPage(QWizardPage):
         header = QHBoxLayout()
         if has_scroll and layout.contentsMargins().left() == 0:
             header.setContentsMargins(28, 20, 28, 0)
-        brand = QLabel("J A R V I S   /   SETUP")
+        brand = QLabel("T O L E S H   /   SETUP")
         brand.setObjectName("setupBrand")
         header.addWidget(brand)
         header.addStretch()
@@ -1108,6 +1108,29 @@ class _CapabilityWorker(KeepAliveWorker):
         self.done.emit(caps)
 
 
+class _BoundedStatusLabel(QLabel):
+    """A wrapped status label that cannot grow the page past a few lines.
+
+    Provider error strings are arbitrarily long. An unbounded wrapped label
+    made this page taller than a 780 px display once a real connection error
+    was shown, which pushed the wizard's navigation row off-screen and forced
+    a vertical scrollbar at 960x780. The full message stays reachable as a
+    tooltip, so nothing is hidden — the page simply stops growing.
+    """
+
+    MAX_LINES = 3
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setWordWrap(True)
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt override)
+        super().setText(text)
+        self.setToolTip(text or "")
+        metrics = self.fontMetrics()
+        self.setMaximumHeight(metrics.lineSpacing() * self.MAX_LINES + 6)
+
+
 class OpenAICompatiblePage(ScrollableWizardPage):
     """Collect the OpenAI-compatible server's connection and model details.
 
@@ -1142,7 +1165,10 @@ class OpenAICompatiblePage(ScrollableWizardPage):
         self._cap_worker = None
 
         layout = QVBoxLayout()
-        layout.setSpacing(14)
+        # 12 px, not 14: this page carries the most rows of any wizard page and
+        # must still fit a 780 px-tall display with a multi-line connection
+        # error showing. See tests/test_wizard_layout.py.
+        layout.setSpacing(12)
         layout.setContentsMargins(28, 20, 28, 20)
 
         title = QLabel("Connect your model server")
@@ -1195,8 +1221,7 @@ class OpenAICompatiblePage(ScrollableWizardPage):
         self._connect_btn.setObjectName("secondary")
         self._connect_btn.clicked.connect(self._on_connect)
         form.addWidget(self._connect_btn)
-        self._connect_status = QLabel("")
-        self._connect_status.setWordWrap(True)
+        self._connect_status = _BoundedStatusLabel("")
         self._connect_status.setStyleSheet(
             f"font-size: 12px; color: {COLORS['text_secondary']};")
         form.addWidget(self._connect_status)

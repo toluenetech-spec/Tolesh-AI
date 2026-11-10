@@ -16,7 +16,7 @@ from tolesh.debug import debug_log
 from tolesh.utils.redact import scrub_secrets
 from desktop_app.themes import TOLESH_THEME_STYLESHEET
 
-_ISSUE_URL = 'https://github.com/isair/jarvis/issues/new'
+_ISSUE_URL = 'https://github.com/tolesh-ai/tolesh/issues/new'
 _URL_LIMIT = 8000
 
 
@@ -251,7 +251,7 @@ class IssueReportDialog(QDialog):
             opened = False
         if not opened:
             self.status.setText('Could not open your browser. Copy the report and open '
-                                'github.com/isair/jarvis/issues/new yourself.')
+                                'github.com/tolesh-ai/tolesh/issues/new yourself.')
             return
         debug_log('Issue report opened for user submission on GitHub', 'desktop')
         self.accept()

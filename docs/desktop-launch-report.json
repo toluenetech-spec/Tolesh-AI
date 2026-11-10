@@ -1,0 +1,59 @@
+{
+  "steps": [
+    {
+      "step": "qapplication",
+      "platform": "xcb"
+    },
+    {
+      "step": "tray_constructed",
+      "tray_available": false
+    },
+    {
+      "step": "backend_started",
+      "ok": true,
+      "error": null,
+      "port": 43571
+    },
+    {
+      "step": "health",
+      "status": "ok",
+      "product": "Tolesh",
+      "providers_configured": [
+        "offline",
+        "ollama"
+      ]
+    },
+    {
+      "step": "chat_sync",
+      "conversation_id": "d91071bbd8fc8f37",
+      "reply": "How far! I dey here, no wahala at all. Wetin dey worry you today? Talk to me any",
+      "model": "offline:tolesh-offline"
+    },
+    {
+      "step": "ai_window",
+      "has_web_view": true,
+      "url": "http://127.0.0.1:43571/"
+    },
+    {
+      "step": "web_engine_load",
+      "loaded": true
+    },
+    {
+      "step": "screenshot",
+      "saved": true,
+      "path": "/tmp/tolesh-launch/tolesh-desktop-window.png",
+      "size": 565185
+    },
+    {
+      "step": "cleanup",
+      "server_running": false
+    },
+    {
+      "step": "persistence_after_desktop_exit",
+      "memories": 1,
+      "marker_present": true,
+      "conversations": 1
+    }
+  ],
+  "ok": true
+}

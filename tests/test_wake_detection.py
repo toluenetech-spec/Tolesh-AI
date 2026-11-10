@@ -28,7 +28,7 @@ class TestWakeWordDetection:
 
     def test_fuzzy_match(self):
         """Fuzzy matching catches slight transcription errors."""
-        assert is_wake_word_detected("hey jarvas", "tolesh", [], fuzzy_ratio=0.78) is True
+        assert is_wake_word_detected("hey tollesh", "tolesh", [], fuzzy_ratio=0.78) is True
 
     def test_fuzzy_below_threshold(self):
         """Completely different word doesn't fuzzy-match."""

@@ -882,7 +882,7 @@ def show_crash_report_dialog(crash_content: str) -> None:
                     'body': body,
                     'labels': 'bug,crash'
                 })
-                url = f"https://github.com/isair/jarvis/issues/new?{params}"
+                url = f"https://github.com/tolesh-ai/tolesh/issues/new?{params}"
 
                 webbrowser.open(url)
                 self.accept()
@@ -1836,6 +1836,13 @@ class ToleshSystemTray:
         self._daemon_stop_expected = False
         self._daemon_stuck = False
 
+        # Integrated Tolesh AI backend. One uvicorn server runs inside this
+        # process for the whole session (see tolesh.server.embedded); the
+        # window below is its desktop face. Neither is a second application.
+        self.ai_server = None
+        self.ai_window = None
+        self._ai_error: Optional[str] = None
+
         # Main-thread signal bridge for chat IPC. The log reader thread emits
         # ``line_received`` (a queued connection) so the chat window is created
         # and the IPC line is parsed on the Qt main thread, never on the
@@ -1905,6 +1912,8 @@ class ToleshSystemTray:
         debug_log("cleaning up on exit", "desktop")
         if self.is_listening:
             self.stop_daemon()
+        # Stop the in-process AI backend before the process tears down.
+        self.stop_ai_backend()
         # Stop memory viewer server
         if hasattr(self, 'memory_viewer'):
             self.memory_viewer.stop_server()
@@ -1926,6 +1935,13 @@ class ToleshSystemTray:
     def create_menu(self) -> None:
         """Create the system tray context menu."""
         self.menu = QMenu()
+
+        # Integrated Tolesh AI interface (chat, memory, providers, approvals).
+        # First in the menu because it is the primary surface of the product.
+        self.ai_action = QAction("🤖 Tolesh AI")
+        self.ai_action.triggered.connect(self.show_ai_window)
+        self.menu.addAction(self.ai_action)
+        self.menu.addSeparator()
 
         # View logs action
         self.logs_action = QAction("📝 View Logs")
@@ -2317,6 +2333,98 @@ class ToleshSystemTray:
         self.chat_window.show()
         self.chat_window.raise_()
         self.chat_window.activateWindow()
+
+    # ------------------------------------------------- integrated AI engine
+    def start_ai_backend(self, timeout: float = 30.0) -> bool:
+        """Start the in-process Tolesh API server, or reuse the running one.
+
+        Returns True when the backend is ready. Failure is *not* fatal: the
+        inherited voice assistant keeps working, the reason is written to the
+        log window, and the tray shows a notification so the user is never
+        left guessing why the AI window is empty.
+        """
+        if self.ai_server is not None and self.ai_server.is_running:
+            return True
+        from tolesh.server.embedded import EmbeddedServer
+
+        server = EmbeddedServer()
+        try:
+            url = server.start(timeout=timeout)
+        except Exception as exc:
+            self._ai_error = str(exc)
+            debug_log(f"Tolesh AI backend failed to start: {exc}", "desktop")
+            self.log_signals.new_log.emit(
+                f"⚠️ Tolesh AI engine failed to start: {exc}\n"
+            )
+            try:
+                self.tray_icon.showMessage(
+                    "Tolesh AI engine unavailable",
+                    str(exc)[:220],
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    6000,
+                )
+            except Exception:
+                pass
+            return False
+
+        self.ai_server = server
+        self._ai_error = None
+        debug_log(f"Tolesh AI backend ready at {url}", "desktop")
+        self.log_signals.new_log.emit(
+            f"🤖 Tolesh AI engine ready at {url} (database: {server._state.db_path if server._state else 'n/a'})\n"
+        )
+        return True
+
+    def _ai_backend_url(self) -> str:
+        """Reconnect callback used by the window when it is reopened."""
+        if not self.start_ai_backend():
+            raise RuntimeError(self._ai_error or "The Tolesh AI engine is not available.")
+        return self.ai_server.url
+
+    def show_ai_window(self) -> None:
+        """Open the integrated Tolesh AI interface."""
+        if not self.start_ai_backend():
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                None,
+                "Tolesh AI",
+                "The Tolesh AI engine could not start.\n\n"
+                f"{self._ai_error or 'Unknown error'}\n\n"
+                "The voice assistant is still running. Check the log window "
+                "(tray menu → View Logs) for details.",
+            )
+            return
+
+        from desktop_app.ai_window import ToleshAIWindow
+
+        if self.ai_window is None:
+            self.ai_window = ToleshAIWindow(
+                self.ai_server.url, on_retry=self._ai_backend_url
+            )
+        else:
+            self.ai_window.set_url(self.ai_server.url)
+
+        self.ai_window.show()
+        self.ai_window.raise_()
+        self.ai_window.activateWindow()
+        self.ai_window.load()
+
+    def stop_ai_backend(self) -> None:
+        """Stop the in-process API server and release its database handles.
+
+        ``getattr`` keeps this safe on partially-constructed instances: the
+        attribute only exists after ``__init__`` ran, and exit cleanup must
+        never raise while the process is tearing down.
+        """
+        server = getattr(self, "ai_server", None)
+        self.ai_server = None
+        if server is None:
+            return
+        try:
+            server.stop()
+            debug_log("Tolesh AI backend stopped", "desktop")
+        except Exception as exc:
+            debug_log(f"error stopping Tolesh AI backend: {exc}", "desktop")
 
     def _set_chat_daemon_available(self, available: bool) -> None:
         """Update an existing chat window when the daemon starts or stops."""
@@ -3819,6 +3927,20 @@ def main() -> int:
         )
         print("ToleshSystemTray initialized successfully", flush=True)
 
+        # Bring up the integrated AI engine inside this process. The user must
+        # never have to launch uvicorn separately, and the interface must not
+        # load before the engine answers health checks.
+        splash.set_status("Starting Tolesh AI engine...")
+        app.processEvents()
+        ai_ready = tray_instance.start_ai_backend()
+        if ai_ready:
+            print("🤖 Tolesh AI engine ready", flush=True)
+        else:
+            print(
+                f"⚠️ Tolesh AI engine unavailable: {tray_instance._ai_error}",
+                flush=True,
+            )
+
         # Always auto-start listening
         splash.set_status("Starting voice assistant...")
         print("🚀 Auto-starting Tolesh listener...", flush=True)
@@ -3832,6 +3954,21 @@ def main() -> int:
         # View Logs / Show Face actions are the only controls after this),
         # so the launch windows are opened here explicitly.
         tray_instance.show_launch_windows()
+
+        # Open the AI interface as the primary window when this build can
+        # render it in-process. Builds without QtWebEngine keep the tray entry
+        # and log the address instead of spawning an external browser at boot.
+        if ai_ready and tray_instance.ai_server is not None:
+            from desktop_app.ai_window import ToleshAIWindow
+            if ToleshAIWindow.embedded_available():
+                tray_instance.show_ai_window()
+            else:
+                print(
+                    "ℹ️ Embedded browser unavailable. Open "
+                    f"{tray_instance.ai_server.url} in a browser, or install "
+                    "PyQt6-WebEngine.",
+                    flush=True,
+                )
 
         if crash_log_file:
             # Show notification with log file location

@@ -1,0 +1,51 @@
+{
+  "url": "http://127.0.0.1:8787",
+  "checks": {
+    "title": "Tolesh — your personal AI assistant",
+    "skip_link": true,
+    "main_focus_target": true,
+    "listbox_opened_by_keyboard": true,
+    "listbox_escape_closes": true,
+    "dialog_opened": true,
+    "dialog_focus_inside": true,
+    "dialog_escape_closes": true,
+    "streamed_reply": "How far! I dey here, no wahala ",
+    "view_url_state": true,
+    "view_restored_after_reload": true,
+    "mobile_drawer_collapsed": true,
+    "reduced_motion": {
+      "durToken": "0ms",
+      "railOpacity": "1",
+      "sendTransition": "1e-06s",
+      "scrollBehavior": "auto"
+    },
+    "reduced_motion_ok": true,
+    "console_and_page_errors": []
+  },
+  "errors": [],
+  "health": {
+    "status": "ok",
+    "version": "0.1.0",
+    "product": "Tolesh",
+    "providers_configured": [
+      "offline",
+      "ollama"
+    ],
+    "default_model": null,
+    "time": 1794291897.0826063
+  },
+  "passed": true,
+  "boolean_checks": {
+    "skip_link": true,
+    "main_focus_target": true,
+    "listbox_opened_by_keyboard": true,
+    "listbox_escape_closes": true,
+    "dialog_opened": true,
+    "dialog_focus_inside": true,
+    "dialog_escape_closes": true,
+    "view_url_state": true,
+    "view_restored_after_reload": true,
+    "mobile_drawer_collapsed": true,
+    "reduced_motion_ok": true
+  }
+}

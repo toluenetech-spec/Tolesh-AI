@@ -30,6 +30,16 @@ datas = [
     (str(src_path / 'desktop_app' / 'desktop_assets' / '*.png'), 'desktop_app/desktop_assets'),
 ]
 
+# The integrated AI interface is the static frontend in web/. Without these
+# files the desktop window loads a 404 page, so they are a hard requirement of
+# the product, not an optional extra.
+_web_dir = project_root / 'web'
+if _web_dir.is_dir():
+    datas.append((str(_web_dir), 'web'))
+    print(f"Bundling Tolesh web interface from {_web_dir}")
+else:
+    print(f"ERROR: web interface directory missing at {_web_dir}")
+
 # Collect Piper TTS data files (espeak-ng-data is required for phonemization)
 try:
     import piper
@@ -110,6 +120,68 @@ hiddenimports = [
     'desktop_app.face_widget',
     'desktop_app.diary_dialog',
     'desktop_app.memory_viewer',
+    # Integrated AI surface + its in-process engine. The desktop app starts
+    # tolesh.server.embedded at launch; omitting these from the bundle produced
+    # a packaged build with a dead AI window.
+    'desktop_app.ai_window',
+    'tolesh._sqlite',
+    'tolesh.ai',
+    'tolesh.ai.registry',
+    'tolesh.ai.router',
+    'tolesh.ai.usage',
+    'tolesh.ai.providers',
+    'tolesh.ai.providers.base',
+    'tolesh.ai.providers.offline',
+    'tolesh.ai.providers.openai_compatible',
+    'tolesh.conversation',
+    'tolesh.conversation.manager',
+    'tolesh.memory_ext',
+    'tolesh.memory_ext.store',
+    'tolesh.permissions',
+    'tolesh.permissions.gate',
+    'tolesh.permissions.policy',
+    'tolesh.persona',
+    'tolesh.persona.prompt',
+    'tolesh.tools_ext',
+    'tolesh.tools_ext.computer',
+    'tolesh.server',
+    'tolesh.server.app',
+    'tolesh.server.embedded',
+    'tolesh.server.schemas',
+    # FastAPI / Starlette / uvicorn internals resolved dynamically at runtime.
+    # PyInstaller cannot see these imports, so they must be listed explicitly.
+    'fastapi',
+    'fastapi.middleware.cors',
+    'fastapi.responses',
+    'fastapi.staticfiles',
+    'starlette',
+    'starlette.applications',
+    'starlette.middleware',
+    'starlette.middleware.cors',
+    'starlette.responses',
+    'starlette.routing',
+    'starlette.staticfiles',
+    'uvicorn',
+    'uvicorn.config',
+    'uvicorn.server',
+    'uvicorn.logging',
+    'uvicorn.loops',
+    'uvicorn.loops.auto',
+    'uvicorn.loops.asyncio',
+    'uvicorn.protocols',
+    'uvicorn.protocols.http',
+    'uvicorn.protocols.http.auto',
+    'uvicorn.protocols.http.h11_impl',
+    'uvicorn.protocols.websockets',
+    'uvicorn.protocols.websockets.auto',
+    'uvicorn.lifespan',
+    'uvicorn.lifespan.on',
+    'uvicorn.lifespan.off',
+    'httpx',
+    'httpcore',
+    'anyio',
+    'anyio._backends',
+    'anyio._backends._asyncio',
     # Listening modules
     'tolesh.listening',
     'tolesh.listening.echo_detection',
