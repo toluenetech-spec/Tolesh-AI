@@ -71,7 +71,18 @@ src/
 │   ├── permissions/     # NEW: policy.py (risk) + gate.py (tokens + audit)
 │   ├── persona/         # NEW: Tolesh system persona
 │   ├── tools_ext/       # NEW: ComputerTools (permission-gated)
-│   └── server/          # NEW: FastAPI app + SSE + schemas
+│   ├── workspace/       # NEW: projects, attachments, assistants, share links
+│   ├── netsearch/       # NEW: page reading + explicit search backends
+│   ├── codeexec/        # NEW: sandboxed Python (rlimits, network namespace)
+│   ├── mcp_bridge/      # NEW: MCP client — stdio + streamable HTTP
+│   ├── connectors/      # NEW: GitHub/Google/Notion/Slack, encrypted tokens
+│   ├── agents/          # NEW: bounded tool loop, registry, run history
+│   ├── artifacts/       # NEW: profiling, charts, reports, artifact store
+│   ├── media/           # NEW: vision input, image generation, STT/TTS
+│   ├── jobs/            # NEW: scheduler, runs, notifications
+│   ├── settings/        # NEW: typed, validated settings store
+│   ├── privacy/         # NEW: audit view, zip export, deletion
+│   └── server/          # NEW: FastAPI app, SSE, schemas, routes_ext
 └── web/                 # NEW: static client (design system, components, voice)
 ```
 

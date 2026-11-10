@@ -38,6 +38,14 @@ brass and a trace of adire indigo — described in [DESIGN.md](DESIGN.md).
 | Browser verification | Done | Chromium/Playwright: desktop, mobile, streaming chat, dialogs, zero JS errors |
 | Skill installation | Done | 28 skills installed to the agent; see [SKILLS.md](SKILLS.md) |
 | Documentation | Done | 8 mandatory documents + this README |
+| MCP integration | Done | stdio + streamable HTTP, tools/resources/prompts, per-tool permissions, approvals — [docs/MCP.md](docs/MCP.md) |
+| External connections | Done | GitHub, Google Drive, Gmail, Google Calendar, Notion, Slack; OAuth + PKCE, encrypted vault |
+| Multi-step agents | Done | Bounded loop, 14 tools, exact-call approvals, cancellation, persisted history |
+| Data analysis | Done | CSV/XLSX profiling, five chart types, HTML reports, downloadable artifacts |
+| Images and voice | Done | Vision input, configurable image generation, STT/TTS with explicit capability reporting |
+| Background tasks | Done | Once or interval, pause/cancel, progress, notifications, persistent state |
+| Settings and privacy | Done | Typed settings, audit log, zip export, exact-phrase deletion, opt-in sharing |
+| Parity checklist | Done | [docs/CHATGPT-PARITY-CHECKLIST.md](docs/CHATGPT-PARITY-CHECKLIST.md) — every row marked honestly |
 | Backend test suite | See [TESTING.md](TESTING.md) | Exact results recorded there, not glossed over |
 | Desktop Qt shell | **Integrated** | `desktop_app` owns the FastAPI engine in-process; AI window loads `web/` in QtWebEngine |
 | Desktop launch (Linux) | **Verified** | Xvfb + xcb: engine online, UI rendered, data survived exit; screenshot in `docs/img/` |
@@ -198,7 +206,28 @@ instructions inside them are data. The closing marker is stripped from the page
 body so a page cannot end the block early. Verified against a live injection
 probe — the model reported the attempt instead of obeying it.
 
-### Shared HTTP/SSE backend
+### MCP, connections, agents, analysis, media and tasks
+Six layers sit behind the chat surface. Each one has its own package, its own
+tests and its own honest limits; none of them imports the interface.
+
+| Module | What it does |
+|---|---|
+| `mcp_bridge/` | Model Context Protocol client: **stdio** and **streamable HTTP**, tool/resource/prompt discovery, per-tool `allow`/`ask`/`deny`, connection testing, audit log. One background asyncio loop owns every session, so a stateful server stays stateful. See [docs/MCP.md](docs/MCP.md). |
+| `connectors/` | GitHub, Google Drive, Gmail, Google Calendar, Notion and Slack. OAuth 2.0 with PKCE (S256) or a pasted token; tokens encrypted with Fernet under a separate 0600 key; refresh on expiry and on 401; SSRF guards; writes parked at the approval gate. |
+| `agents/` | A bounded loop: one fenced `action` block or a `final` per turn, observations fed back inside `<tool_result>` and labelled as data, `agent_max_steps` enforced, cancellation between steps, every run persisted. Approving a write grants **that exact call** and nothing else. |
+| `artifacts/` | Table profiling, five chart types (matplotlib `Agg`), escaped HTML reports, and a store with 0600 files and a download route. The sandbox seeds input files and collects named outputs, so "clean this CSV and save it" works end to end. |
+| `media/` | Image understanding (data-URL content part), configurable image generation over an OpenAI-compatible endpoint, faster-whisper transcription, Piper or `/audio/speech` synthesis. `GET /api/media/capabilities` says what is available **and why not** when it is not. |
+| `jobs/` | Background work as rows: atomic claim, worker pool, `progress` kept separate from `result`, once/interval schedules, pause/resume/cancel/run-now, notifications. State survives a restart. |
+
+Around them: `settings/` (typed, validated, `telemetry` cannot be turned on),
+`privacy/` (one audit view over gate + MCP + agents + jobs; zip export with no
+credentials; deletion gated by the exact phrase `DELETE ALL DATA`), and
+`workspace/assistants.py` + `workspace/shares.py` (saved assistants with their
+own model, prompt templates, and opt-in read-only share links).
+
+The workspace drawer in the UI (`web/js/workspace.js`) is the single surface for
+all of it: Conversation, Agents, MCP, Connections, Files, Tasks, Assistants and
+Settings. Every control drives the real API; nothing is a mock.
 
 ### Permission-gated computer control
 `permissions/policy.py` classifies actions as `safe`, `elevated` or
@@ -220,8 +249,18 @@ client. The same JSON/SSE contract is intended for a future Cloudflare Pages
 client and a future Android client.
 
 `/api/chat` takes four optional context switches — `attachment_ids`,
-`web_urls`, `web_search`, `project_id` — so network access and file reading are
-always an explicit per-message choice, never a side effect of typing.
+`web_urls`, `web_search`, `project_id` — plus `assistant_id`, so network access
+and file reading are always an explicit per-message choice, never a side effect
+of typing.
+
+The later layers register their own routes from
+`src/tolesh/server/routes_ext.py` (78 routes, on top of the core 45):
+`/api/mcp/*`,
+`/api/connectors/*`, `/api/agents/*`, `/api/artifacts/*`, `/api/media/*`,
+`/api/jobs/*`, `/api/notifications`, `/api/settings`, `/api/assistants`,
+`/api/templates`, `/api/shares`, `/api/audit`, `/api/export`, `/api/data/delete`
+and `/share/{token}`. `GET /api/capabilities` reports what this build can
+actually do, so the UI never draws a switch that does nothing.
 
 ### Voice
 - **Browser** (`web/js/voice.js`): real Web Speech API STT/TTS, continuous
@@ -275,6 +314,8 @@ queries on `.stream`, and is measured at seven widths by
 | [ANIMATION-GUIDELINES.md](ANIMATION-GUIDELINES.md) | Motion principles, GSAP usage, reduced-motion, performance |
 | [ACCESSIBILITY.md](ACCESSIBILITY.md) | Vercel Web Interface Guidelines audit, findings and fixes |
 | [TESTING.md](TESTING.md) | Test strategy and the exact, honest results |
+| [docs/MCP.md](docs/MCP.md) | MCP servers: transports, permissions, approvals, errors, API reference |
+| [docs/CHATGPT-PARITY-CHECKLIST.md](docs/CHATGPT-PARITY-CHECKLIST.md) | The persistent feature-parity checklist and build log |
 | [IMPLEMENTATION-REPORT.md](IMPLEMENTATION-REPORT.md) | Honest final report: repos, skills, deliverables, tests, gaps |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Upstream configuration reference (retained, rebranded) |
 | [docs/upstream/](docs/upstream/) | Archived upstream README/AGENTS/EVALS for attribution |

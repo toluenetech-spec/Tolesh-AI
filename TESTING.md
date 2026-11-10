@@ -86,6 +86,10 @@ xvfb-run -a python3.11 -m pytest -q \
 PYTHONPATH=src python3.11 scripts/verify_web_ui.py \
   --url http://127.0.0.1:8787
 
+# Workspace drawer E2E: all eight tabs, one live action each
+PYTHONPATH=src python3.11 scripts/verify_workspace_ui.py \
+  --url http://127.0.0.1:8787
+
 # Regenerate the config example consumed by docs/CONFIGURATION.md
 PYTHONPATH=src python3.11 scripts/generate_config_examples.py
 ```
@@ -228,6 +232,39 @@ conversation it claims. Writes `docs/dahl-report.json`; exits non-zero unless a
 real answer arrived.
 `capture_web_conversation.py` and `capture_provider_models.py` drive Chromium to
 produce the screenshots in `docs/img/` from live responses.
+
+### The capability layers — 131 tests across ten modules
+
+| File | Tests | What it proves |
+| --- | --- | --- |
+| [`tests/test_tolesh_mcp_bridge.py`](tests/test_tolesh_mcp_bridge.py) | 17 | Store validation, secret masking and round-trip, stdio connect, tool/resource/prompt discovery, invocation, tool-level error, session reuse, permission policy, disconnect |
+| [`tests/test_tolesh_api_mcp.py`](tests/test_tolesh_api_mcp.py) | 8 | The HTTP contract: CRUD, test, tools, invoke, approval parking, audit |
+| [`tests/test_tolesh_connectors.py`](tests/test_tolesh_connectors.py) | 14 | Encryption at rest, PKCE pair, state single-use and TTL, token refresh, SSRF refusal, write approval, provider catalogue |
+| [`tests/test_tolesh_api_connectors.py`](tests/test_tolesh_api_connectors.py) | 9 | Token connect, OAuth start/complete, callback page, test, disconnect, action routing |
+| [`tests/test_tolesh_agents.py`](tests/test_tolesh_agents.py) | 13 | Reply parsing (action/final/plain/broken), step budget, observation wrapping, exact-call approvals, cancel, history persistence |
+| [`tests/test_tolesh_api_agents.py`](tests/test_tolesh_api_agents.py) | 7 | Run creation, SSE event order, approval → resume executes the tool, cancel, delete |
+| [`tests/test_tolesh_artifacts.py`](tests/test_tolesh_artifacts.py) | 15 | Profiling, all five chart types, escaped reports, store permissions, size cap, download |
+| [`tests/test_tolesh_media.py`](tests/test_tolesh_media.py) | 18 | Vision message shape, generation over a fake provider, STT/TTS with a fake server, capability reasons, 503 when unconfigured |
+| [`tests/test_tolesh_jobs.py`](tests/test_tolesh_jobs.py) | 15 | Atomic claim, once/interval, pause/resume/cancel, progress separate from result, notifications, persistence across restart |
+| [`tests/test_tolesh_privacy_and_extras.py`](tests/test_tolesh_privacy_and_extras.py) | 15 | Settings validation, audit aggregation, zip export contents, exact-phrase deletion, assistants (including the assistant's model), templates, sharing, edit/branch/regenerate |
+
+Two of these use **real servers**, not mocks: `tests/fixtures/mcp_fixture_server.py`
+(a FastMCP stdio server exposing `echo`, `add`, `explode`, a resource and a
+prompt) and `tests/fixtures/mcp_http_fixture_server.py` (the same over
+streamable HTTP, behind an `Authorization` header check). A fixture must not use
+`from __future__ import annotations` — string annotations make the SDK's
+`issubclass()` fail.
+
+### `scripts/verify_workspace_ui.py`
+
+Drives the workspace drawer in Chromium against the real API: opens all eight
+tabs, registers and connects a real stdio MCP server, runs a real agent, uploads
+a CSV and profiles and charts it, opens the chart at full size, schedules a
+task, saves and selects an assistant, flips a settings toggle and confirms the
+server agreed, checks the connector catalogue, measures horizontal overflow at
+320/375/768/1024/1440/1920 px, and verifies Escape and focus return. It writes
+[`docs/workspace-verification.json`](docs/workspace-verification.json) and 16
+screenshots to `docs/img/workspace/`, and exits non-zero on any failure.
 
 ## 6. Browser verification result
 
@@ -418,10 +455,12 @@ These are real fixes, not test edits to force green.
 | After Dahl provider + web interface work (fixes 13–16) | `5978 passed, 27 skipped, 2 deselected, 5 warnings in 279.92s` |
 | After Token Harbor / MiMo / MiniMax + editable chain | `6030 passed, 27 skipped, 2 deselected, 6 warnings` |
 | After history, projects, attachments, web and sandbox (30 new tests) | `6060 passed, 27 skipped, 2 deselected, 6 warnings in 313.05s` |
+| After MCP, connectors, agents, artifacts, media, jobs, privacy (130 new tests) | `6173 passed, 9 failed, 36 skipped, 2 deselected` — the nine were dictation tests with no X server; with `Xvfb :99` they pass |
+| After the workspace drawer, its browser regression and one assistant-model test | **`6192 passed, 27 skipped, 2 deselected, 6 warnings in 563.21s`** |
 
 **Final full-suite result (current):** `DISPLAY=:99 python3.11 -m pytest -q`
 (against `Xvfb :99`) returned
-**`5978 passed, 27 skipped, 2 deselected, 5 warnings in 279.92s`** — **0 failures,
+**`6192 passed, 27 skipped, 2 deselected, 6 warnings in 563.21s`** — **0 failures,
 0 errors**. The single failure carried over from the previous audit
 (`test_wizard_layout.py::test_controls_fit_on_short_display[960-780-OpenAICompatiblePage]`)
 remains fixed in product code, not by loosening the assertion. No test was

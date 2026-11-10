@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -94,7 +95,8 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     url = args.url.rstrip("/")
     page_url = f"{url}/?token={args.token}" if args.token else url
-    csv_path = out / "sales.csv"
+    # A throwaway upload, not a repository artefact.
+    csv_path = Path(tempfile.mkdtemp(prefix="tolesh-ui-")) / "sales.csv"
     write_csv(csv_path)
 
     report: dict = {"url": url, "checks": {}, "errors": [], "shots": []}
@@ -110,7 +112,7 @@ def main() -> int:
             context = browser.new_context(viewport={"width": 1440, "height": 900})
             page = context.new_page()
             collect(page, report["errors"])
-            _run(page, url, out, report, Path(args.fixture))
+            _run(page, url, out, report, Path(args.fixture), csv_path)
             browser.close()
     except Exception as exc:  # noqa: BLE001 - reported, never hidden
         report["crashed"] = f"{type(exc).__name__}: {exc}"
@@ -133,7 +135,8 @@ def main() -> int:
     return 0 if report["passed"] else 1
 
 
-def _run(page, url: str, out: Path, report: dict, fixture: Path) -> None:
+def _run(page, url: str, out: Path, report: dict, fixture: Path,
+         csv_path: Path) -> None:
     check = report["checks"]
 
     def shot(name: str) -> None:
@@ -231,7 +234,7 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path) -> None:
     # Files: upload a CSV, profile it, chart it.
     page.click("#ws-tab-files")
     page.wait_for_selector("#wsFile")
-    page.set_input_files("#wsFile", str(out / "sales.csv"))
+    page.set_input_files("#wsFile", str(csv_path))
     page.click("#wsUpload")
     page.wait_for_selector("#wsAttachments .ws-card-title", timeout=10000)
     check["upload_lands"] = "sales.csv" in page.inner_text("#wsAttachments")
