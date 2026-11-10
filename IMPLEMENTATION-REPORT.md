@@ -264,9 +264,12 @@ the application exited. Evidence: `docs/desktop-launch-report.json`
   to be commercially distributable. See
   [LICENSING-ASSESSMENT.md](LICENSING-ASSESSMENT.md).
 - The public site's "Read the licence" link resolves to a **404** at
-  `https://github.com/tolesh-ai/tolesh/blob/main/LICENSE` (the repository/branch
-  is not published); `site.json` also says `main` while this working copy is on
-  `master`. Both need the project owner's publishing decision.
+  `https://github.com/toluenetech-spec/Tolesh-AI/blob/main/LICENSE`. The
+  destination is now the confirmed repository (HTTP 200, default branch
+  `main`) and the branch mismatch is gone, but the blob is 404 because the
+  commits are **not pushed** — this environment has no GitHub credentials.
+  `site.json` no longer guesses. **Not claimed fixed.** See
+  [LICENSING-ASSESSMENT.md §6d](LICENSING-ASSESSMENT.md).
 - Live JEV / Gonka / Dahl provider endpoints were never called with real keys;
   only the offline provider and a local Ollama config were exercised.
 - The inherited native wake-word / VAD / Piper / Chatterbox pipeline was **not

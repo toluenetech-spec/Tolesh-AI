@@ -264,20 +264,76 @@ requires a separate licence from the copyright holder.
 **This document does not grant, imply or claim any commercial rights.** It
 records a requirement, as instructed.
 
+### §6d. Confirmed destination and branch alignment (2026-11-10, later)
+
+The project owner supplied the real publication target:
+`https://github.com/toluenetech-spec/Tolesh-AI`. That is now the **only**
+confirmed destination, so `website/site.json` was corrected from the
+never-published `https://github.com/tolesh-ai/tolesh` to it.
+
+Verification actually performed (anonymous HTTP, no guessing):
+
+| URL | HTTP |
+| --- | --- |
+| `https://github.com/toluenetech-spec/Tolesh-AI` | **200** |
+| `https://github.com/toluenetech-spec/Tolesh-AI/tree/main` | **200** |
+| `https://github.com/toluenetech-spec/Tolesh-AI/blob/main/LICENSE` | **404** |
+| `https://github.com/isair/jarvis` (upstream control) | **200** |
+
+GitHub API for the repository reports `default_branch: main`, `private: false`,
+`size: 0`, and a single root entry `README.md` — i.e. the repository exists but
+**does not yet contain this project's history**.
+
+Rebuilt site output now generates:
+
+```
+https://github.com/toluenetech-spec/Tolesh-AI/blob/main/LICENSE
+```
+
+**Status: destination corrected and confirmed; the licence link itself is still
+404 and is NOT claimed fixed.** The blob 404 is now caused by exactly one
+remaining fact — the local commits have not been pushed. Pushing requires
+credentials that are not present in this environment:
+
+```
+$ git push -u origin main
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+```
+
+The local branch was renamed `master` → `main` and the remote's
+`da34a41 Initial commit` was merged (`--allow-unrelated-histories`, README kept
+from this tree), so the push is now a plain fast-forward:
+
+```
+da34a41 Initial commit            (origin/main)
+716a1ae Bootstrap Tolesh ...
+2fe5271 Unify the desktop app ...
+fd4d4f9 Merge remote initial commit; keep Tolesh README   (HEAD -> main)
+```
+
+Once pushed, `.../blob/main/LICENSE` resolves because `LICENSE` is committed at
+the repository root. That is a prediction, not a verification: it must be
+re-checked with `curl -o /dev/null -w '%{http_code}'` after the push, and this
+document should be updated with the real code at that time.
+
 ## 9. Outstanding / not done
 
-- **Public-site licence link is still broken (404)** — the unpublished
-  `tolesh-ai/tolesh` repository. **Not fixed** and **not claimed fixed**: no
-  successful HTTP verification exists for it. §6c re-verified **all 16** URLs
-  in the rebuilt output: 7 `tolesh-ai/tolesh` links and 4 canonical
-  `barissencan.com/tolesh/` links return `404`; all 5 external attribution /
-  vocabulary links return `200`; GitHub was **not** rate limited
-  (`remaining 53/60`). Requires the project owner to publish the repository
-  (with the root `LICENSE`), or to supply the actual published destination, or
-  to approve an in-site licence page — and, separately, to deploy the site.
-  `site.json` was left untouched pending that decision.
-- `site.json` `source_branch: main` vs local branch `master` — mismatch
-  recorded, not changed.
+- **Public-site licence link is still broken (404)** — see §6d. The
+  destination is now the confirmed
+  `toluenetech-spec/Tolesh-AI` and the branch mismatch is gone (`main`), but the
+  blob is 404 because the commits are **not pushed**: this environment has no
+  GitHub credentials (`could not read Username for 'https://github.com'`).
+  **Not fixed and not claimed fixed** until a push lands and the URL is
+  re-verified with an actual HTTP status.
+- **Publishing is blocked on the owner** — the repository exists (HTTP 200) and
+  accepts a fast-forward from this working copy, but someone with credentials
+  must run `git push -u origin main`.
+- **The site itself is not deployed** — `barissencan.com/tolesh/` returns `404`
+  for the four canonical URLs. All 5 external attribution / vocabulary links
+  return `200`. GitHub was **not** rate limited (`remaining 53/60`).
+  Deploying the generated output is a separate owner action.
+- `site.json` `source_branch: main` now matches the local branch (renamed from
+  `master`).
 - No legal opinion obtained; no lawyer engaged.
 - No commercial licence negotiated or obtained (no contact made with the
   copyright holder).
