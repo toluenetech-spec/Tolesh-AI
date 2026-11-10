@@ -86,8 +86,42 @@ deterministic `offline:tolesh-offline` engine, which is a rule-based,
 culturally-aware conversation surface — it is explicitly **not a language
 model** and never pretends to be one. Add a key to enable a real provider.
 
-### Connecting Dahl (the provider this build is wired against)
+### Providers this build routes to
 
+Every provider is an OpenAI-compatible registry entry, so adding one is a
+catalogue entry plus a key — not new plumbing. The endpoints below were read
+from each provider's own documentation and checked with a real request:
+
+| Provider | Base URL | Key variable | Models declared |
+|---|---|---|---|
+| Token Harbor | `https://tokenharbor.ai/v1` | `TOLESH_TOKENHARBOR_API_KEY` (`thk_live_…`) | `deepseek-v4.1-flash`, `deepseek-v4.1-flash:free`, `mimo-v2.6-flash`, `mimo-v2.6-flash:free`, `glm-5.3-flash` |
+| DeepSeek | `https://api.deepseek.com/v1` | `TOLESH_DEEPSEEK_API_KEY` | `deepseek-chat`, `deepseek-reasoner` |
+| Dahl | `https://inference.dahl.global/v1` | `TOLESH_DAHL_API_KEY` | `deepseek-ai/DeepSeek-V4-Flash-0731`, `MiniMaxAI/MiniMax-M2.7`, `zai-org/GLM-5.3-Flash` |
+| Xiaomi MiMo | `https://api.xiaomimimo.com/v1` | `TOLESH_MIMO_API_KEY` (`sk-…`) | `mimo-v2.6-flash`, `mimo-v2.6-pro` |
+| MiniMax | `https://api.minimax.io/v1` | `TOLESH_MINIMAX_API_KEY` | `MiniMax-M3.1-Flash`, `MiniMax-M3` |
+
+Two honest notes about the catalogue. `:free` is Token Harbor's own suffix for
+free-tier admission of the same model, not a label invented here — a key with no
+plan answers `402 balance_zero` on the paid id while the `:free` id still works.
+And MiniMax's own platform no longer serves the `MiniMax-M2.7` id that Dahl
+does; M2.7 is declared against Dahl, and the platform entry carries M3.1-Flash
+and M3 instead of a model id that would never answer.
+
+### The fallback chain, and how to change it
+
+The conversation chain is DeepSeek V4.1 Flash (Token Harbor) → DeepSeek's own
+API → GLM-5.3 Flash → MiMo V2.6 Flash → MiniMax M2.7, then whatever else is
+configured, ending with the offline engine. Providers with no key are dropped
+from the chain, so a declared-but-unkeyed step costs nothing.
+
+**Settings → Fallback order** edits this without a restart: move a model up or
+down, or switch it off. Switched-off models stay visible (parked at the bottom,
+marked `off`) so they can be switched back on. *Reset* restores the built-in
+order. The choice is written to the per-user config, and `/api/health` reports
+the resulting chain as `fallback_order` so the line under the composer states
+what will actually run.
+
+### Connecting Dahl (the provider this build is wired against)
 Dahl's gateway is OpenAI-compatible, so it is a registry entry, not new code:
 
 ```bash

@@ -644,6 +644,34 @@ body[data-core-state="speaking"] .orb-ring-1 { animation: core-ring-out 1.2s var
 .danger-link { display: block; margin-top: var(--s-4); font-size: var(--fs-xs); color: var(--danger); text-align: left; text-decoration: underline; text-underline-offset: 3px; opacity: 0.8; }
 .danger-link:hover { opacity: 1; }
 
+/* Fallback order editor — the chain the router walks, position 1 first. */
+.route-list { display: flex; flex-direction: column; gap: 2px; }
+.route-row {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: 6px var(--s-2); border-radius: var(--r-xs);
+  transition: background var(--dur-fast);
+}
+.route-row:hover { background: var(--brass-08); }
+.route-row.is-off { opacity: 0.45; }
+.route-pos {
+  flex: none; width: 1.4em; text-align: right;
+  font-size: var(--fs-2xs); color: var(--brass); font-variant-numeric: tabular-nums;
+}
+.route-text { flex: 1; min-width: 0; }
+.route-name {
+  display: block; font-size: var(--fs-sm); color: var(--ivory-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.route-meta { display: block; font-size: var(--fs-2xs); color: var(--muted-dim); letter-spacing: 0.05em; }
+.route-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.route-actions .text-btn { padding: 3px; line-height: 0; }
+.route-actions .text-btn[disabled] { opacity: 0.25; cursor: default; }
+.route-actions .icon { width: 15px; height: 15px; }
+.icon.rot-up { transform: rotate(180deg); }
+.icon.rot-down { transform: none; }
+.route-switch { display: flex; align-items: center; margin-left: var(--s-2); }
+.route-switch input { accent-color: var(--brass); cursor: pointer; }
+
 .provider-list { display: flex; flex-direction: column; gap: 2px; }
 .provider-row { display: flex; align-items: center; gap: var(--s-3); padding: 7px var(--s-2); border-radius: var(--r-xs); transition: background var(--dur-fast); }
 .provider-row:hover { background: var(--brass-08); }

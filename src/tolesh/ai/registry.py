@@ -26,19 +26,33 @@ CONFIG_PATH = Path(
 # suited to the job ("different models for different tasks"). Anything not
 # listed falls back to the registry default model.
 TASK_MODEL_ORDER: dict[str, tuple[str, ...]] = {
-    # Same-provider alternates come directly after the preferred model: when a
-    # gateway queues one model (Dahl answers 429 model_concurrency), switching
-    # inside the provider is faster and more predictable than reaching for a
-    # different vendor.
-    "chat": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-             "dahl:zai-org/GLM-5.3-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
-             "gonka:GLM-4.6", "openai:gpt-4o", "jev:jev-chat"),
-    "reasoning": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-                  "dahl:zai-org/GLM-5.3-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
-                  "deepseek:deepseek-reasoner", "gonka:GLM-4.6"),
-    "code": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-             "dahl:zai-org/GLM-5.3-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
-             "deepseek:deepseek-chat", "openai:gpt-4o"),
+    # The conversation chain the user asked for: DeepSeek V4.1 Flash on Token
+    # Harbor, then DeepSeek's own API, then GLM-5.3 Flash, then MiMo V2.6 Flash,
+    # then MiniMax. A ``:free`` id is the same model under the gateway's free
+    # admission, so it sits directly behind its paid twin instead of being a
+    # separate vendor hop. Providers with no key are dropped from the chain by
+    # ``candidates()``, so a declared-but-unkeyed step costs nothing.
+    "chat": ("tokenharbor:deepseek-v4.1-flash",
+             "tokenharbor:deepseek-v4.1-flash:free",
+             "deepseek:deepseek-chat",
+             "dahl:zai-org/GLM-5.3-Flash",
+             "mimo:mimo-v2.6-flash", "tokenharbor:mimo-v2.6-flash:free",
+             "minimax:MiniMax-M3.1-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
+             "openai:gpt-4o", "jev:jev-chat"),
+    "reasoning": ("tokenharbor:deepseek-v4.1-flash",
+                  "tokenharbor:deepseek-v4.1-flash:free",
+                  "deepseek:deepseek-reasoner",
+                  "dahl:zai-org/GLM-5.3-Flash",
+                  "mimo:mimo-v2.6-pro",
+                  "minimax:MiniMax-M3", "dahl:MiniMaxAI/MiniMax-M2.7",
+                  "gonka:GLM-4.6"),
+    "code": ("tokenharbor:deepseek-v4.1-flash",
+             "tokenharbor:deepseek-v4.1-flash:free",
+             "deepseek:deepseek-chat",
+             "dahl:zai-org/GLM-5.3-Flash",
+             "mimo:mimo-v2.6-flash", "tokenharbor:mimo-v2.6-flash:free",
+             "minimax:MiniMax-M3.1-Flash", "dahl:MiniMaxAI/MiniMax-M2.7",
+             "openai:gpt-4o"),
     "fast": ("dahl:MiniMaxAI/MiniMax-M2.7", "dahl:zai-org/GLM-5.3-Flash",
              "offline:tolesh-offline", "groq:llama-3.3-70b-versatile",
              "openai:gpt-4o-mini"),
@@ -233,6 +247,66 @@ def _catalog() -> dict[str, ProviderSpec]:
                "switch model or retry. Configure TOLESH_DAHL_API_KEY."),
     )
 
+    # Token Harbor: an OpenAI-compatible gateway that serves DeepSeek V4.1
+    # Flash and MiMo V2.6 Flash alongside Claude/GPT/Gemini. Verified against
+    # ``GET https://tokenharbor.ai/v1/models`` with a real key — 81 ids. Only
+    # the ones this app routes to are declared; ``:free`` is a real suffix on
+    # the gateway (same model, free-tier admission), not a label we invented.
+    tokenharbor = keyed(
+        "tokenharbor", "Token Harbor", "https://tokenharbor.ai/v1",
+        (
+            _m("tokenharbor", "deepseek-v4.1-flash", "DeepSeek V4.1 Flash",
+               tasks=("chat", "code", "reasoning"), cost_tier="cheap",
+               context=1048576, tools=True),
+            _m("tokenharbor", "deepseek-v4.1-flash:free", "DeepSeek V4.1 Flash (free tier)",
+               tasks=("chat", "code"), cost_tier="free", context=1048576),
+            _m("tokenharbor", "mimo-v2.6-flash", "MiMo V2.6 Flash",
+               tasks=("chat", "code"), cost_tier="cheap", context=1048576, tools=True),
+            _m("tokenharbor", "mimo-v2.6-flash:free", "MiMo V2.6 Flash (free tier)",
+               tasks=("chat", "code"), cost_tier="free", context=1048576),
+            _m("tokenharbor", "glm-5.3-flash", "GLM-5.3 Flash",
+               tasks=("chat", "code", "reasoning", "fast"), cost_tier="cheap",
+               context=1000000, tools=True),
+        ),
+        notes=("Token Harbor gateway (OpenAI-compatible). Keys look like "
+               "thk_live_…; configure TOLESH_TOKENHARBOR_API_KEY. A key with no "
+               "plan answers 402 balance_zero on paid ids while the ':free' ids "
+               "still work, which is why both are declared."),
+    )
+
+    # Xiaomi MiMo open platform. Both the OpenAI-compatible and Anthropic-shaped
+    # endpoints exist; this uses the OpenAI one, like every other provider here.
+    mimo = keyed(
+        "mimo", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1",
+        (
+            _m("mimo", "mimo-v2.6-flash", "MiMo V2.6 Flash",
+               tasks=("chat", "code"), cost_tier="cheap", context=1048576, tools=True),
+            _m("mimo", "mimo-v2.6-pro", "MiMo V2.6 Pro",
+               tasks=("chat", "code", "reasoning"), cost_tier="standard",
+               context=1048576, tools=True),
+        ),
+        notes=("Xiaomi MiMo open platform (OpenAI-compatible at /v1). Keys look "
+               "like sk-…; configure TOLESH_MIMO_API_KEY. Thinking models return "
+               "reasoning_content next to content."),
+    )
+
+    # MiniMax's own platform. It no longer serves the M2.7 id that Dahl does —
+    # the current OpenAI-compatible models are M3.1-Flash and M3.
+    minimax = keyed(
+        "minimax", "MiniMax", "https://api.minimax.io/v1",
+        (
+            _m("minimax", "MiniMax-M3.1-Flash", "MiniMax M3.1 Flash",
+               tasks=("chat", "code", "fast"), cost_tier="cheap",
+               context=1000000, tools=True),
+            _m("minimax", "MiniMax-M3", "MiniMax M3",
+               tasks=("chat", "code", "reasoning"), cost_tier="standard",
+               context=1000000, tools=True),
+        ),
+        notes=("MiniMax platform (OpenAI-compatible at /v1). Configure "
+               "TOLESH_MINIMAX_API_KEY. MiniMax M2.7 is not on this endpoint — "
+               "it is served by Dahl, which is why both are declared."),
+    )
+
     openai = keyed(
         "openai", "OpenAI", "https://api.openai.com/v1",
         (
@@ -260,11 +334,17 @@ def _catalog() -> dict[str, ProviderSpec]:
         notes="Aggregator; useful as a broad fallback.",
     )
 
-    return {p.name: p for p in (offline, ollama, jev, gonka, dahl, openai, groq, deepseek, openrouter)}
+    return {p.name: p for p in (offline, ollama, jev, gonka, dahl, tokenharbor,
+                                mimo, minimax, openai, groq, deepseek, openrouter)}
 
 
 class Registry:
     """Ordered, queryable catalogue of providers and models."""
+
+    # Tasks whose chain follows the user's edited order. The short-latency
+    # lanes (fast, voice_intent, classification) keep their own order because
+    # a reorder meant for conversations must not silently change them.
+    ORDERED_TASKS = ("chat", "reasoning", "code")
 
     def __init__(self, providers: dict[str, ProviderSpec] | None = None):
         self.providers: dict[str, ProviderSpec] = providers or {}
@@ -273,6 +353,9 @@ class Registry:
             for m in p.models:
                 self._models[m.id] = m
         self.default_model = os.environ.get("TOLESH_DEFAULT_MODEL", "")
+        # User-edited fallback order for the conversational tasks. Empty means
+        # "use the built-in order" — the code's opinion, not the user's.
+        self.chat_order: list[str] = []
 
     @classmethod
     def from_defaults(cls) -> "Registry":
@@ -304,6 +387,24 @@ class Registry:
         reg = cls(providers)
         if default_model and reg.model(default_model) is not None:
             reg.default_model = default_model
+        # Per-model switches and the edited chain live in the same file. Read
+        # them through the registry so a restart keeps what the user chose.
+        try:
+            if CONFIG_PATH.exists():
+                raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+                overrides = {str(mid): bool(flag)
+                             for mid, flag in (raw.get("model_enabled") or {}).items()}
+                if overrides:
+                    for pname, p in list(reg.providers.items()):
+                        if any(m.id in overrides for m in p.models):
+                            reg.providers[pname] = replace(p, models=tuple(
+                                replace(m, enabled=overrides[m.id]) if m.id in overrides else m
+                                for m in p.models))
+                    reg._models = {m.id: m for p in reg.providers.values() for m in p.models}
+                order = [str(x) for x in (raw.get("chat_order") or []) if isinstance(x, str)]
+                reg.chat_order = [x for x in order if reg._models.get(x) is not None]
+        except Exception:
+            pass
         return reg
 
     # -------------------------------------------------- user configuration
@@ -373,6 +474,51 @@ class Registry:
             raw["default_model"] = model_id
             self._write_user_config(raw)
 
+    def set_model_enabled(self, model_id: str, enabled: bool, *,
+                          persist: bool = False) -> ModelSpec:
+        """Switch one model on or off without touching its provider.
+
+        The spec is replaced in the provider tuple as well as in the index, so
+        every reader (chain builder, /api/models, the picker) sees the same
+        answer — there is no second source of truth to drift.
+        """
+        spec = self._models.get(model_id)
+        if spec is None:
+            raise KeyError(f"Unknown model: {model_id}")
+        p = self.providers.get(spec.provider)
+        if p is not None:
+            self.providers[spec.provider] = replace(p, models=tuple(
+                replace(m, enabled=enabled) if m.id == model_id else m for m in p.models))
+        self._models[model_id] = replace(spec, enabled=enabled)
+        if persist:
+            raw = self._read_user_config()
+            table = raw.setdefault("model_enabled", {})
+            table[model_id] = bool(enabled)
+            self._write_user_config(raw)
+        return self._models[model_id]
+
+    def set_chat_order(self, model_ids: list[str], *, persist: bool = False) -> list[str]:
+        """Persist the user's fallback order for the conversational tasks.
+
+        Unknown ids are rejected rather than silently dropped: a typo in the
+        order would otherwise look like it saved and then do nothing.
+        """
+        cleaned: list[str] = []
+        for mid in model_ids:
+            mid = str(mid).strip()
+            if not mid:
+                continue
+            if self._models.get(mid) is None:
+                raise KeyError(f"Unknown model: {mid}")
+            if mid not in cleaned:
+                cleaned.append(mid)
+        self.chat_order = cleaned
+        if persist:
+            raw = self._read_user_config()
+            raw["chat_order"] = cleaned
+            self._write_user_config(raw)
+        return cleaned
+
     @staticmethod
     def _read_user_config() -> dict[str, Any]:
         try:
@@ -427,6 +573,11 @@ class Registry:
             order.append(preferred)
         if self.default_model:
             order.append(self.default_model)
+        # A user-edited order wins over the built-in one for conversations, and
+        # is then followed by the built-in order so newly added models still get
+        # a turn instead of being stranded outside the chain.
+        if self.chat_order and task in self.ORDERED_TASKS:
+            order.extend(self.chat_order)
         order.extend(TASK_MODEL_ORDER.get(task, ()))
         order.extend(TASK_MODEL_ORDER.get("chat", ()))
         order.append("offline:tolesh-offline")

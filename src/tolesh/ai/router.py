@@ -60,6 +60,17 @@ def _model_is_full(exc: ProviderError) -> bool:
     return "model_concurrency" in text or "concurrency capacity" in text
 
 
+# Statuses that describe the *request*, not the provider. Every model would
+# reject the same payload, so walking the rest of the chain only delays a clear
+# error — and it would burn quota on providers that are working fine.
+_REQUEST_ERROR_STATUS = {400, 413, 422}
+
+
+def _request_is_malformed(exc: ProviderError) -> bool:
+    """True when the failure is about the request, so the chain must stop."""
+    return exc.status in _REQUEST_ERROR_STATUS and not exc.retryable
+
+
 class ModelRouter:
     def __init__(self, registry: Registry | None = None,
                  ledger: UsageLedger | None = None, *, offline_delay: float = 0.012):
@@ -158,6 +169,17 @@ class ModelRouter:
                         "status": exc.status, "retry_after": exc.retry_after,
                         "code": exc.code, "attempt": attempt,
                     }, spec.id)
+                    # A malformed request fails the same way everywhere; stop
+                    # instead of burning every provider to reach one message.
+                    if _request_is_malformed(exc):
+                        if partial:
+                            yield RouterEvent("reset", {"reason": "provider_failed"}, spec.id)
+                        yield RouterEvent("error", {
+                            "message": f"{spec.label} rejected the request: {exc}",
+                            "attempts": attempts,
+                            "fatal": True,
+                        })
+                        return
                     # A full model is not a transient blip on *this* model: the
                     # gateway is telling us to switch, so do it immediately
                     # instead of sleeping through retries the user can hear.
@@ -240,6 +262,9 @@ class ModelRouter:
                                            max_tokens=max_tokens)
                 except ProviderError as exc:
                     attempts.append(exc.as_dict())
+                    if _request_is_malformed(exc):
+                        raise RouterError(
+                            f"{spec.label} rejected the request: {exc}", attempts) from exc
                     if exc.retryable and attempt < max_attempts and not _model_is_full(exc):
                         time.sleep(min(0.25 * (2 ** (attempt - 1)), 2.0))
                         continue

@@ -36,15 +36,17 @@ def test_dahl_catalog_points_at_the_real_gateway():
     assert registry.model("dahl:dahl-fast") is None
 
 
-def test_chat_chain_tries_the_other_dahl_models_before_other_vendors():
+def test_chat_chain_keeps_the_dahl_models_in_a_sensible_order():
+    """The chain itself is owned by the routing table (see
+    test_tolesh_provider_integrations for the requested order); what matters
+    here is that Dahl's own models do not drift apart from each other."""
     registry = Registry.from_defaults()
     chain = [m.id for m in registry.candidates("chat")]
-    assert chain[0] == "dahl:deepseek-ai/DeepSeek-V4-Flash-0731"
-    # A queued model should fall to its neighbour inside the same provider,
-    # and GLM is the preferred stand-in: DeepSeek → GLM → MiniMax.
-    assert chain[1] == "dahl:zai-org/GLM-5.3-Flash"
-    assert chain[2] == "dahl:MiniMaxAI/MiniMax-M2.7"
     assert chain[-1] == "offline:tolesh-offline"
+    dahl = [m for m in chain if m.startswith("dahl:")]
+    assert dahl.index("dahl:zai-org/GLM-5.3-Flash") < dahl.index("dahl:MiniMaxAI/MiniMax-M2.7")
+    # Nothing was dropped from the catalogue by the reorder.
+    assert "dahl:deepseek-ai/DeepSeek-V4-Flash-0731" in chain
 
 
 # ------------------------------------------------------------ model discovery
@@ -236,12 +238,28 @@ class _GatewayStub:
 
 
 @pytest.fixture()
-def dahl_router(monkeypatch):
+def dahl_router(monkeypatch, tmp_path):
+    """A router whose chain starts with the three Dahl models.
+
+    Pinned explicitly so these tests keep exercising Dahl's capacity behaviour
+    no matter what the default routing table prefers — the order itself is
+    asserted in test_tolesh_provider_integrations. The per-user providers file
+    is redirected to tmp_path so a developer's real keys cannot change what
+    these assertions see.
+    """
     from tolesh.ai import ModelRouter, UsageLedger
+    from tolesh.ai import registry as registry_mod
+    monkeypatch.setattr(registry_mod, "CONFIG_PATH", tmp_path / "providers.json")
     monkeypatch.setenv("TOLESH_DAHL_API_KEY", "test-key")
     monkeypatch.delenv("TOLESH_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("TOLESH_TOKENHARBOR_API_KEY", raising=False)
+    monkeypatch.delenv("TOLESH_DEEPSEEK_API_KEY", raising=False)
     ledger = UsageLedger(in_memory=True)
-    router = ModelRouter(Registry.from_defaults(), ledger)
+    registry = Registry.from_defaults()
+    registry.set_chat_order(["dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+                             "dahl:zai-org/GLM-5.3-Flash",
+                             "dahl:MiniMaxAI/MiniMax-M2.7"])
+    router = ModelRouter(registry, ledger)
     try:
         yield router
     finally:
@@ -322,12 +340,14 @@ def test_error_body_code_is_parsed_from_the_gateway_response():
     assert exc.value.as_dict()["code"] == "model_concurrency"
 
 
-def test_health_states_the_real_fallback_order(monkeypatch):
+def test_health_states_the_real_fallback_order(monkeypatch, tmp_path):
     """The UI line under the composer names the chain, so it has to come from
     the router rather than from catalogue order (which is by declaration)."""
     from fastapi.testclient import TestClient
+    from tolesh.ai import registry as registry_mod
     from tolesh.server.app import AppState, create_app
 
+    monkeypatch.setattr(registry_mod, "CONFIG_PATH", tmp_path / "providers.json")
     monkeypatch.setenv("TOLESH_DAHL_API_KEY", "test-key")
     monkeypatch.delenv("TOLESH_API_TOKEN", raising=False)
     state = AppState(in_memory=True)
@@ -336,8 +356,9 @@ def test_health_states_the_real_fallback_order(monkeypatch):
             order = c.get("/api/health").json()["fallback_order"]
     finally:
         state.close()
-    assert order[:3] == [
-        "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-        "dahl:zai-org/GLM-5.3-Flash",
-        "dahl:MiniMaxAI/MiniMax-M2.7",
-    ]
+    # Only Dahl has a key here, so the chain is the requested order minus the
+    # steps whose provider is not configured yet — and it still ends offline.
+    assert order[0] == "dahl:zai-org/GLM-5.3-Flash"
+    assert "dahl:MiniMaxAI/MiniMax-M2.7" in order
+    assert order[-1] == "offline:tolesh-offline"
+    assert not any(m.startswith("tokenharbor:") for m in order)

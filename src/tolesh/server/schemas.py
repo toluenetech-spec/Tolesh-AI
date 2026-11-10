@@ -69,3 +69,19 @@ class ConfigPatch(BaseModel):
     """Application-level routing preference."""
 
     default_model: str | None = Field(default=None, max_length=200)
+
+
+class ModelPatch(BaseModel):
+    """Switch one model on or off without touching its provider."""
+
+    enabled: bool
+
+
+class FallbackOrder(BaseModel):
+    """The user's own chain for the conversational tasks.
+
+    An empty list restores the built-in order, which is why it is accepted
+    rather than rejected: "reset" has to be expressible.
+    """
+
+    models: list[str] = Field(default_factory=list, max_length=200)

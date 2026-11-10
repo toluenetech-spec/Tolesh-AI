@@ -181,8 +181,17 @@
 
         <section class="panel-section" aria-labelledby="h-providers">
           <div class="panel-head"><h3 id="h-providers">Providers</h3><span class="count" id="providerCount">0</span></div>
-          <p class="panel-note">Keys are read from your environment, never stored in the app.</p>
+          <p class="panel-note">Keys are saved to your own config file (mode 0600), never in the app or the repository.</p>
           <div id="providerList" class="provider-list"></div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="h-routing">
+          <div class="panel-head">
+            <h3 id="h-routing">Fallback order</h3>
+            <button class="text-btn" id="resetOrderBtn" type="button">Reset</button>
+          </div>
+          <p class="panel-note">The order Tolesh tries when a model is busy, unreachable or out of quota. Move a model, or switch it off to skip it entirely.</p>
+          <div id="routeList" class="route-list"></div>
         </section>
 
         <section class="panel-section" aria-labelledby="h-usage">

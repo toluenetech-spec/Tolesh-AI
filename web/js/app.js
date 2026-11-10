@@ -25,6 +25,7 @@ const state = {
   streaming: false,
   abort: null,
   health: null,            // last /api/health payload, reused for re-renders
+  route: [],               // the fallback chain, in the order it is tried
 };
 
 const SUGGESTIONS = [
@@ -147,13 +148,14 @@ async function refreshAll() {
     const health = await api.health();
     state.online = true;
     setConnection(true);
-    const [providers, models, memory, usage, tools, pending] = await Promise.all([
+    const [providers, models, memory, usage, tools, pending, route] = await Promise.all([
       api.get('/api/providers'),
       api.get('/api/models'),
       api.get('/api/memory'),
       api.get('/api/usage'),
       api.get('/api/tools'),
       api.get('/api/permissions/pending'),
+      api.get('/api/fallback-order'),
     ]);
     state.providers = providers.providers || [];
     state.models = models.models || [];
@@ -161,6 +163,7 @@ async function refreshAll() {
     state.usage = usage || {};
     state.tools = tools.tools || [];
     state.pending = pending.pending || [];
+    state.route = route.detail || [];
 
     renderAll(health);
     restCoreState();
@@ -252,11 +255,73 @@ function renderAll(health) {
   });
   ui.renderProviders($('providerList'), state.providers, { onConfigure: openProviderDialog });
   $('providerCount').textContent = String(state.providers.filter((p) => p.configured).length);
+  renderRoute();
   ui.renderUsage($('usageGrid'), state.usage);
   ui.renderTools($('toolList'), state.tools, { onInvoke });
   renderMemoryFilters();
   renderMemory();
   renderPermissions();
+}
+
+/* -------------------------------------------------------- fallback order */
+/** The chain is the router's, not the panel's: read it back from the server
+ *  after every change so what is shown is what will actually be tried. */
+async function refreshRoute() {
+  try {
+    const r = await api.get('/api/fallback-order');
+    state.route = r.detail || [];
+  } catch (_) {
+    state.route = [];
+  }
+  renderRoute();
+}
+
+function renderRoute() {
+  ui.renderRoute($('routeList'), state.route, {
+    onMove: moveRoute,
+    onToggle: toggleModel,
+  });
+}
+
+async function moveRoute(id, direction) {
+  // Only switched-on models are part of the chain; sending a parked id would
+  // write a dead entry into the saved order.
+  const ids = state.route.filter((m) => m.enabled).map((m) => m.id);
+  const i = ids.indexOf(id);
+  const j = direction === 'up' ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  try {
+    await api.put('/api/fallback-order', { models: ids });
+    await refreshRoute();
+    ui.toast('Fallback order saved.', 'ok');
+  } catch (err) {
+    ui.toast(err.message, 'error');
+    await refreshRoute();
+  }
+}
+
+async function toggleModel(id, enabled) {
+  try {
+    await api.patch(`/api/models/${encodeURIComponent(id)}`, { enabled });
+    await refreshRoute();
+    // The chain lost or gained a step, so the composer footnote is now stale.
+    if (state.health) renderComposerNote(state.health);
+    ui.toast(`${modelLabel(id)} ${enabled ? 'enabled' : 'switched off'}.`, 'ok');
+  } catch (err) {
+    ui.toast(err.message, 'error');
+    await refreshRoute();
+  }
+}
+
+async function resetRoute() {
+  try {
+    await api.put('/api/fallback-order', { models: [] });
+    await refreshRoute();
+    ui.toast('Fallback order reset to the built-in chain.', 'ok');
+  } catch (err) {
+    ui.toast(err.message, 'error');
+  }
 }
 
 function renderMemoryFilters() {
@@ -563,6 +628,7 @@ function bindEvents() {
   $('contextClose').addEventListener('click', () => openContext(false));
   $('addMemoryBtn').addEventListener('click', addMemory);
   $('forgetBtn').addEventListener('click', forgetEverything);
+  $('resetOrderBtn').addEventListener('click', resetRoute);
 
   document.querySelectorAll('.rail-item').forEach((btn) => {
     btn.addEventListener('click', () => {

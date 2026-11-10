@@ -41,8 +41,8 @@ from ..permissions import PermissionGate
 from ..persona import build_system_prompt
 from ..tools_ext import ComputerTools
 from .schemas import (
-    ChatRequest, ConfigPatch, ConversationCreate, ConversationRename, MemoryCreate,
-    MemoryForget, PermissionDecision, ProviderPatch, ToolInvoke,
+    ChatRequest, ConfigPatch, ConversationCreate, ConversationRename, FallbackOrder,
+    MemoryCreate, MemoryForget, ModelPatch, PermissionDecision, ProviderPatch, ToolInvoke,
 )
 
 VERSION = "0.1.0"
@@ -144,7 +144,7 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
         return {"status": "ok", "version": VERSION, "product": "Tolesh",
                 "providers_configured": configured,
                 "default_model": st.registry.default_model or None,
-                "fallback_order": chain[:6],
+                "fallback_order": chain[:20],
                 "database": st.db_path,
                 "static_frontend": web.is_dir(),
                 "time": time.time()}
@@ -160,6 +160,56 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
     @app.get("/api/models")
     def models(task: str | None = None, provider: str | None = None) -> dict[str, Any]:
         return {"models": [m.as_dict() for m in st.registry.models(task=task, provider=provider)]}
+
+    @app.patch("/api/models/{model_id:path}")
+    def patch_model(model_id: str, body: ModelPatch) -> dict[str, Any]:
+        """Enable or disable a single model.
+
+        Provider-level ``enabled`` switches a whole vendor off; this is the
+        finer control the settings panel needs, and it persists outside the
+        repository like every other user preference.
+        """
+        try:
+            spec = st.registry.set_model_enabled(model_id, body.enabled, persist=True)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"model": spec.as_dict()}
+
+    @app.get("/api/fallback-order")
+    def get_fallback_order() -> dict[str, Any]:
+        """The chain the router will actually walk, in order.
+
+        Models the user switched off are appended with ``enabled: false``
+        instead of disappearing — a switch you cannot reach again is a trap,
+        not a setting.
+        """
+        chain = st.registry.candidates("chat")
+        seen = {m.id for m in chain}
+        parked = [m for p in st.registry.providers.values()
+                  if p.configured and p.enabled
+                  for m in p.models if not m.enabled and m.id not in seen]
+        return {
+            "models": [m.id for m in chain],
+            "custom": list(st.registry.chat_order),
+            "detail": [{"id": m.id, "label": m.label, "provider": m.provider,
+                        "enabled": True} for m in chain]
+                      + [{"id": m.id, "label": m.label, "provider": m.provider,
+                          "enabled": False} for m in parked],
+        }
+
+    @app.put("/api/fallback-order")
+    def put_fallback_order(body: FallbackOrder) -> dict[str, Any]:
+        """Persist the user's order for chat/reasoning/code.
+
+        Unknown ids are a 400, not a silent drop: an order that looks saved but
+        is ignored would be worse than an error.
+        """
+        try:
+            saved = st.registry.set_chat_order(body.models, persist=True)
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        chain = st.registry.candidates("chat")
+        return {"custom": saved, "models": [m.id for m in chain]}
 
     # --------------------------------------------------------- configuration
     @app.patch("/api/config")

@@ -408,8 +408,43 @@ export function renderProviders(container, providers, { onConfigure } = {}) {
   }
 }
 
-export function renderUsage(container, usage) {
-  const nf = new Intl.NumberFormat();
+/** The chain the router will walk, with the two controls that change it.
+ *  Order matters here: position 1 is what answers unless it fails. */
+export function renderRoute(container, items, { onMove, onToggle } = {}) {
+  if (!items.length) {
+    container.innerHTML = '<p class="panel-note">No model is configured yet. Add a key to a provider first.</p>';
+    return;
+  }
+  const live = items.filter((m) => m.enabled).length;
+  container.innerHTML = items.map((m, i) => `
+    <div class="route-row ${m.enabled ? '' : 'is-off'}" data-model="${esc(m.id)}">
+      <span class="route-pos">${m.enabled ? i + 1 : '–'}</span>
+      <span class="route-text" title="${esc(m.label)} — ${esc(m.provider)}">
+        <span class="route-name">${esc(m.label)}</span>
+        <span class="route-meta">${esc(m.provider)}${m.enabled ? '' : ' · off'}</span>
+      </span>
+      <span class="route-actions">
+        <button class="text-btn" data-move="up" data-id="${esc(m.id)}"
+                aria-label="Move ${esc(m.label)} up"
+                ${(!m.enabled || i === 0) ? 'disabled' : ''}>${icon('chevron', 'rot-up')}</button>
+        <button class="text-btn" data-move="down" data-id="${esc(m.id)}"
+                aria-label="Move ${esc(m.label)} down"
+                ${(!m.enabled || i >= live - 1) ? 'disabled' : ''}>${icon('chevron', 'rot-down')}</button>
+        <label class="route-switch" title="${m.enabled ? 'Switch off' : 'Switch on'}">
+          <input type="checkbox" data-toggle="${esc(m.id)}" ${m.enabled ? 'checked' : ''}
+                 aria-label="Enable ${esc(m.label)}">
+        </label>
+      </span>
+    </div>`).join('');
+  container.querySelectorAll('[data-move]').forEach((btn) => {
+    btn.addEventListener('click', () => onMove?.(btn.dataset.id, btn.dataset.move));
+  });
+  container.querySelectorAll('[data-toggle]').forEach((box) => {
+    box.addEventListener('change', () => onToggle?.(box.dataset.toggle, box.checked));
+  });
+}
+
+export function renderUsage(container, usage) {  const nf = new Intl.NumberFormat();
   const cells = [
     [nf.format(usage.requests ?? 0), 'Requests'],
     [nf.format(usage.total_tokens ?? 0), 'Tokens'],

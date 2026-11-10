@@ -45,6 +45,8 @@ export const post = (path, body) =>
   request(path, { method: 'POST', headers: headers(true), body: JSON.stringify(body) });
 export const patch = (path, body) =>
   request(path, { method: 'PATCH', headers: headers(true), body: JSON.stringify(body) });
+export const put = (path, body) =>
+  request(path, { method: 'PUT', headers: headers(true), body: JSON.stringify(body) });
 export const del = (path) => request(path, { method: 'DELETE', headers: headers() });
 
 export async function health() {
