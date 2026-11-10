@@ -23,6 +23,8 @@ class ChatRequest(BaseModel):
     web_urls: list[str] = Field(default_factory=list, max_length=5)
     web_search: bool = False
     project_id: str | None = None
+    # A saved assistant contributes instructions and (optionally) a model.
+    assistant_id: str | None = Field(default=None, max_length=64)
 
 
 class ConversationCreate(BaseModel):
@@ -198,6 +200,50 @@ class ConnectorActionRun(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
     approval_id: str | None = None
     approval_token: str | None = None
+
+
+class MessageEdit(BaseModel):
+    content: str = Field(..., min_length=1, max_length=32000)
+
+
+class BranchCreate(BaseModel):
+    message_id: str | None = Field(default=None, max_length=64)
+    title: str | None = Field(default=None, max_length=120)
+
+
+class AssistantCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    description: str = Field(default="", max_length=500)
+    instructions: str = Field(default="", max_length=8000)
+    model: str = Field(default="", max_length=200)
+    greeting: str = Field(default="", max_length=2000)
+    tools: list[str] = Field(default_factory=list, max_length=50)
+    icon: str = Field(default="", max_length=16)
+
+
+class AssistantPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+    instructions: str | None = Field(default=None, max_length=8000)
+    model: str | None = Field(default=None, max_length=200)
+    greeting: str | None = Field(default=None, max_length=2000)
+    tools: list[str] | None = Field(default=None, max_length=50)
+    icon: str | None = Field(default=None, max_length=16)
+
+
+class TemplateCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    body: str = Field(..., min_length=1, max_length=8000)
+    category: str = Field(default="", max_length=40)
+
+
+class ShareCreate(BaseModel):
+    ttl_hours: float | None = Field(default=None, ge=1, le=8760)
+
+
+class DataDelete(BaseModel):
+    confirm: str = Field(..., max_length=100)
+    include_keys: bool = False
 
 
 class JobCreate(BaseModel):

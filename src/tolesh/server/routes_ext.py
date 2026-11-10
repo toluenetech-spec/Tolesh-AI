@@ -17,8 +17,9 @@ from fastapi import FastAPI, HTTPException, Request
 from .schemas import (
     AgentRunCreate, ArtifactAnalyse, ArtifactChart, ConnectorActionRun,
     ConnectorOAuthComplete, ConnectorOAuthStart, ConnectorTokenCreate,
-    JobCreate, JobPatch, MCPInvoke, MCPPromptRun, MCPServerPatch, MediaDescribe,
-    MediaGenerate, MediaSpeak,
+    AssistantCreate, AssistantPatch, BranchCreate, DataDelete, JobCreate,
+    JobPatch, MCPInvoke, MCPPromptRun, MCPServerPatch, MediaDescribe,
+    MediaGenerate, MediaSpeak, MessageEdit, ShareCreate, TemplateCreate,
 )
 
 
@@ -29,6 +30,10 @@ def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_artifacts(app, st)
     _register_media(app, st)
     _register_jobs(app, st)
+    _register_settings(app, st)
+    _register_assistants(app, st)
+    _register_sharing(app, st)
+    _register_editing(app, st)
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
@@ -650,3 +655,241 @@ def _register_jobs(app: FastAPI, st: Any) -> None:
     @app.post("/api/notifications/read-all")
     def read_all_notifications() -> dict[str, Any]:
         return {"marked": st.jobs.mark_all_read()}
+
+
+# ---------------------------------------------------------------- settings
+def _register_settings(app: FastAPI, st: Any) -> None:
+    from fastapi.responses import Response
+
+    from ..privacy import collect, delete_all, export_all, summary
+    from ..settings import SettingsError
+
+    @app.get("/api/settings")
+    def get_settings() -> dict[str, Any]:
+        return st.settings.all()
+
+    @app.patch("/api/settings")
+    def patch_settings(body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return st.settings.patch(body)
+        except SettingsError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/settings/reset")
+    def reset_settings() -> dict[str, Any]:
+        return st.settings.reset()
+
+    @app.get("/api/audit")
+    def audit(limit: int = 100) -> dict[str, Any]:
+        """Every consequential thing this workspace did, newest first."""
+        return {"events": collect(st, limit=max(1, min(limit, 500))),
+                "summary": summary(st)}
+
+    @app.get("/api/audit/summary")
+    def audit_summary() -> dict[str, Any]:
+        return summary(st)
+
+    @app.get("/api/export")
+    def export() -> Any:
+        """Download everything as a zip, with no credentials inside."""
+        payload, manifest = export_all(st)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        return Response(content=payload, media_type="application/zip",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="tolesh-export-{stamp}.zip"',
+                                 "X-Tolesh-Export-Counts":
+                                     str(manifest["counts"])})
+
+    @app.post("/api/data/delete")
+    def delete_data(body: DataDelete) -> dict[str, Any]:
+        result = delete_all(st, body.confirm, include_keys=body.include_keys)
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        return result
+
+
+# -------------------------------------------------------------- assistants
+def _register_assistants(app: FastAPI, st: Any) -> None:
+    @app.get("/api/assistants")
+    def list_assistants() -> dict[str, Any]:
+        return {"assistants": st.assistants.assistants(),
+                "templates": st.assistants.templates()}
+
+    @app.post("/api/assistants")
+    def create_assistant(body: AssistantCreate) -> dict[str, Any]:
+        try:
+            return {"assistant": st.assistants.create_assistant(
+                body.name, instructions=body.instructions,
+                description=body.description, model=body.model,
+                greeting=body.greeting, tools=body.tools, icon=body.icon)}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.patch("/api/assistants/{assistant_id}")
+    def patch_assistant(assistant_id: str, body: AssistantPatch) -> dict[str, Any]:
+        try:
+            return {"assistant": st.assistants.update_assistant(
+                assistant_id, body.model_dump(exclude_none=True))}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown assistant.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/assistants/{assistant_id}")
+    def delete_assistant(assistant_id: str) -> dict[str, Any]:
+        if not st.assistants.delete_assistant(assistant_id):
+            raise HTTPException(status_code=404, detail="Unknown assistant.")
+        return {"status": "ok"}
+
+    @app.post("/api/templates")
+    def create_template(body: TemplateCreate) -> dict[str, Any]:
+        try:
+            return {"template": st.assistants.create_template(
+                body.name, body.body, category=body.category)}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/templates/{template_id}")
+    def delete_template(template_id: str) -> dict[str, Any]:
+        if not st.assistants.delete_template(template_id):
+            raise HTTPException(status_code=404, detail="Unknown template.")
+        return {"status": "ok"}
+
+
+# ---------------------------------------------------------------- sharing
+def _register_sharing(app: FastAPI, st: Any) -> None:
+    from fastapi.responses import HTMLResponse
+
+    from ..workspace import render_error, render_page
+
+    @app.get("/api/shares")
+    def list_shares() -> dict[str, Any]:
+        return {"shares": st.shares.list(),
+                "enabled": bool(st.settings.get("share_links_enabled"))}
+
+    @app.post("/api/conversations/{cid}/share")
+    def create_share(cid: str, body: ShareCreate) -> dict[str, Any]:
+        """Create a read-only link. Off by default; this is a deliberate act."""
+        if not st.settings.get("share_links_enabled"):
+            raise HTTPException(
+                status_code=403,
+                detail="Sharing is switched off. Enable 'share_links_enabled' in "
+                       "Settings first.")
+        conversation = st.conversations.get(cid)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+        share = st.shares.create(cid, title=conversation["title"],
+                                 ttl_hours=body.ttl_hours)
+        return {"share": share}
+
+    @app.delete("/api/shares/{token}")
+    def revoke_share(token: str) -> dict[str, Any]:
+        if not st.shares.revoke(token):
+            raise HTTPException(status_code=404, detail="Unknown share link.")
+        return {"status": "revoked"}
+
+    @app.get("/share/{token}")
+    def public_share(token: str) -> Any:
+        """The public page for one shared conversation.
+
+        Exempt from the API token guard: the token *is* the credential, and the
+        page shows one conversation with no ids, no settings and no workspace.
+        """
+        share = st.shares.get(token)
+        if share is None:
+            return HTMLResponse(render_error("This link does not exist."),
+                                status_code=404)
+        if not share["active"]:
+            return HTMLResponse(render_error("This link has been revoked or has expired."),
+                                status_code=410)
+        conversation = st.conversations.get(share["conversation_id"])
+        if conversation is None:
+            return HTMLResponse(render_error("The conversation was deleted."),
+                                status_code=410)
+        st.shares.record_view(token)
+        messages = st.conversations.messages(share["conversation_id"], limit=500)
+        return HTMLResponse(render_page(share, messages))
+
+
+# ------------------------------------------------------------ message edits
+def _register_editing(app: FastAPI, st: Any) -> None:
+    from fastapi.responses import StreamingResponse
+
+    @app.patch("/api/conversations/{cid}/messages/{mid}")
+    def edit_message(cid: str, mid: str, body: MessageEdit) -> dict[str, Any]:
+        """Replace a message and drop everything that followed it.
+
+        An answer to text the user has since changed is no longer an answer to
+        anything, so keeping it would be worse than removing it. The client then
+        sends the new question through the normal chat endpoint.
+        """
+        if st.conversations.get(cid) is None:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+        removed = st.conversations.truncate_from(cid, mid)
+        if not removed:
+            raise HTTPException(status_code=404, detail="Message not found.")
+        created = st.conversations.add_message(cid, "user", body.content)
+        return {"status": "ok", "removed": removed, "message": created,
+                "messages": st.conversations.messages(cid)}
+
+    @app.delete("/api/conversations/{cid}/messages/{mid}")
+    def delete_message(cid: str, mid: str) -> dict[str, Any]:
+        if not st.conversations.delete_message(mid):
+            raise HTTPException(status_code=404, detail="Message not found.")
+        return {"status": "ok", "messages": st.conversations.messages(cid)}
+
+    @app.post("/api/conversations/{cid}/branch")
+    def branch(cid: str, body: BranchCreate) -> dict[str, Any]:
+        conversation = st.conversations.branch(cid, up_to_message_id=body.message_id,
+                                               title=body.title)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation or message not found.")
+        return {"conversation": conversation}
+
+    @app.post("/api/conversations/{cid}/regenerate")
+    def regenerate(cid: str) -> StreamingResponse:
+        """Answer the last question again, replacing the previous answer."""
+        if st.conversations.get(cid) is None:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+        messages = st.conversations.messages(cid)
+        last_user = next((m for m in reversed(messages) if m["role"] == "user"), None)
+        if last_user is None:
+            raise HTTPException(status_code=400, detail="There is no question to answer.")
+        previous = st.conversations.last_assistant_id(cid)
+        if previous:
+            st.conversations.delete_message(previous)
+
+        from .app import _messages_for
+        from .schemas import ChatRequest
+
+        req = ChatRequest(message=last_user["content"], conversation_id=cid)
+        blocks: list[str] = []
+        prepared = _messages_for(st, req, cid, blocks)
+
+        def gen():
+            chunks: list[str] = []
+            model_used: str | None = None
+            try:
+                yield _sse({"type": "meta", "data": {"conversation_id": cid,
+                                                     "regenerated": True}})
+                for event in st.router.stream(prepared, task=req.task, model=req.model,
+                                              temperature=req.temperature,
+                                              max_tokens=req.max_tokens):
+                    if event.type == "token":
+                        chunks.append(str(event.data))
+                    elif event.type == "reset":
+                        chunks.clear()
+                    elif event.type in ("usage", "done") and event.model_id:
+                        model_used = event.model_id
+                    yield _sse(event.as_dict())
+                text = "".join(chunks)
+                if text:
+                    st.conversations.add_message(cid, "assistant", text,
+                                                 model=model_used,
+                                                 tokens=max(1, len(text) // 4))
+            except Exception as exc:
+                yield _sse({"type": "error", "data": {"message": str(exc)}})
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})

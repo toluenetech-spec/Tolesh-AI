@@ -137,6 +137,66 @@ class ConversationManager:
             self._conn.commit()
         return cur.rowcount > 0
 
+    # ------------------------------------------------------------ editing
+    def delete_message(self, message_id: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM messages WHERE id=?", (message_id,))
+            self._conn.commit()
+        return cur.rowcount > 0
+
+    def truncate_from(self, conversation_id: str, message_id: str) -> int:
+        """Delete one message and everything after it.
+
+        Editing a question invalidates every answer that followed, so the
+        conversation is rewound to that point instead of keeping replies to
+        text the user has since changed.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT created_at FROM messages WHERE id=? AND conversation_id=?",
+                (message_id, conversation_id)).fetchone()
+            if row is None:
+                return 0
+            cur = self._conn.execute(
+                "DELETE FROM messages WHERE conversation_id=? AND created_at>=?",
+                (conversation_id, row[0]))
+            self._conn.execute("UPDATE conversations SET updated_at=? WHERE id=?",
+                               (time.time(), conversation_id))
+            self._conn.commit()
+        return cur.rowcount
+
+    def last_assistant_id(self, conversation_id: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT id FROM messages WHERE conversation_id=? AND role='assistant'
+                   ORDER BY created_at DESC LIMIT 1""", (conversation_id,)).fetchone()
+        return row[0] if row else None
+
+    def branch(self, conversation_id: str, *, up_to_message_id: str | None = None,
+               title: str | None = None) -> dict[str, Any] | None:
+        """Copy a conversation up to a message into a new one.
+
+        A branch is a separate conversation, not a tree in one thread: it keeps
+        the history readable, makes deletion obvious, and needs no change to the
+        schema the desktop client already reads.
+        """
+        source = self.get(conversation_id)
+        if source is None:
+            return None
+        messages = self.messages(conversation_id, limit=5000)
+        if up_to_message_id:
+            index = next((i for i, m in enumerate(messages)
+                          if m["id"] == up_to_message_id), None)
+            if index is None:
+                return None
+            messages = messages[:index + 1]
+        base = title or f"{source['title']} (branch)"
+        created = self.create(base[:120], project_id=source.get("project_id"))
+        for message in messages:
+            self.add_message(created["id"], message["role"], message["content"],
+                             model=message.get("model"), tokens=message.get("tokens") or 0)
+        return self.get(created["id"])
+
     def delete(self, conversation_id: str) -> bool:
         with self._lock:
             self._conn.execute("DELETE FROM messages WHERE conversation_id=?", (conversation_id,))

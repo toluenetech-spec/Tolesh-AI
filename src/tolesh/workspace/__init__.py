@@ -1,10 +1,15 @@
-"""Workspace stores: projects and uploaded files.
+"""Workspace stores: projects, uploaded files, assistants, templates, shares.
 
-Both are additive modules — nothing here imports the chat interface, so a
-future client (Android, CLI) can use them without the web UI.
+All additive modules — nothing here imports the chat interface, so a future
+client (Android, CLI) can use them without the web UI.
 """
 
+from .assistants import AssistantStore
 from .attachments import AttachmentStore, chunk_text, extract_text
 from .projects import ProjectStore
+from .shares import ShareStore, render_error, render_page
 
-__all__ = ["AttachmentStore", "ProjectStore", "chunk_text", "extract_text"]
+__all__ = [
+    "AssistantStore", "AttachmentStore", "ProjectStore", "ShareStore",
+    "chunk_text", "extract_text", "render_error", "render_page",
+]

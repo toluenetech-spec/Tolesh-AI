@@ -50,7 +50,9 @@ from ..netsearch import (FetchError, SearchUnavailable, configured_backends,
 from ..permissions import PermissionGate
 from ..persona import build_system_prompt
 from ..tools_ext import ComputerTools
-from ..workspace import AttachmentStore, ProjectStore
+from ..settings import SettingsStore
+from ..workspace import (AssistantStore, AttachmentStore, ProjectStore,
+                         ShareStore)
 from .schemas import (
     ChatRequest, ConfigPatch, ConversationCreate, ConversationFlags,
     ConversationRename, ExecRequest, FallbackOrder, MemoryCreate, MemoryForget,
@@ -122,6 +124,9 @@ class AppState:
             conversations=self.conversations, codeexec=codeexec,
             netsearch=netsearch, artifacts=self.artifacts, media=media,
             router=self.router)
+        self.settings = SettingsStore(db_path=path)
+        self.assistants = AssistantStore(db_path=path)
+        self.shares = ShareStore(db_path=path)
         self.jobs = JobScheduler(db_path=path, executor=self.run_job)
         self.db_path = path
 
@@ -164,7 +169,8 @@ class AppState:
             except Exception:
                 pass
         for obj in (self.ledger, self.memory, self.conversations, self.projects,
-                    self.attachments, self.artifacts, self.agent_history, self.gate):
+                    self.attachments, self.artifacts, self.agent_history,
+                    self.settings, self.assistants, self.shares, self.gate):
             try:
                 obj.close()
             except Exception:
@@ -182,6 +188,11 @@ def _messages_for(state: AppState, req: ChatRequest, conversation_id: str,
     system = build_system_prompt(state.memory.build_context(), task=req.task,
                                  model_label=label,
                                  project_instructions=state.projects.instructions_for(project_id))
+    assistant = state.assistants.get_assistant(req.assistant_id) if req.assistant_id else None
+    if assistant and assistant.get("instructions"):
+        system = (system + "\n\nYou are acting as the saved assistant "
+                  f"\"{assistant['name']}\". Follow these instructions:\n"
+                  + assistant["instructions"])
     blocks = [b for b in (extra_blocks or []) if b]
     if blocks:
         system = system + "\n\n" + "\n\n".join(blocks)
@@ -229,7 +240,10 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
         # which cannot carry a bearer header. Its single-use ``state`` value is
         # the credential, so exempting it does not open the API.
         public = (path.startswith("/api/health")
-                  or path == "/api/connectors/oauth/callback")
+                  or path == "/api/connectors/oauth/callback"
+                  # A share link is its own credential and shows one
+                  # conversation, which is the entire point of sharing it.
+                  or path.startswith("/share/"))
         if api_token and path.startswith("/api/") and not public:
             supplied = request.headers.get("Authorization", "")
             if supplied != f"Bearer {api_token}":
