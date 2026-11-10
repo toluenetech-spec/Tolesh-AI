@@ -42,6 +42,7 @@ from ..codeexec import network_isolation_available, run_python
 from ..connectors import ConnectorManager, ConnectorStore
 from .. import codeexec, media, netsearch
 from ..conversation import ConversationManager
+from ..jobs import JobScheduler
 from ..mcp_bridge import MCPManager, MCPServerStore
 from ..memory_ext import LayeredMemory
 from ..netsearch import (FetchError, SearchUnavailable, configured_backends,
@@ -121,10 +122,43 @@ class AppState:
             conversations=self.conversations, codeexec=codeexec,
             netsearch=netsearch, artifacts=self.artifacts, media=media,
             router=self.router)
+        self.jobs = JobScheduler(db_path=path, executor=self.run_job)
         self.db_path = path
 
+    def run_job(self, job: dict[str, Any], progress: Any) -> dict[str, Any]:
+        """Execute one background job.
+
+        A job that needs an approval cannot wait forever in the background: it
+        is reported as needing attention instead of executing unattended.
+        """
+        self.agents.router = self.router
+        self.agent_context.router = self.router
+        if job.get("kind") == "prompt":
+            result = self.router.complete(
+                [{"role": "user", "content": job["goal"]}], task="chat",
+                max_tokens=800)
+            return {"result": getattr(result, "text", "")}
+        run = self.agents.create(job["goal"],
+                                 conversation_id=job.get("conversation_id") or None)
+        answer = ""
+        for event in self.agents.stream(run["id"], self.agent_context):
+            if event.type == "final":
+                answer = event.data.get("answer", "")
+            elif event.type == "tool_result":
+                progress(f"{event.data.get('tool')}: "
+                         f"{'ok' if event.data.get('ok') else 'failed'}",
+                         {"tool": event.data.get("tool")})
+            elif event.type == "approval_required":
+                return {"error": "This job needs approval before it can continue. "
+                                 "Run it from the workspace to approve it."}
+            elif event.type == "error":
+                return {"error": event.data.get("message", "The agent failed.")}
+            elif event.type == "cancelled":
+                return {"error": "Cancelled."}
+        return {"result": answer}
+
     def close(self) -> None:
-        for closer in (self.mcp.close, self.connectors.close):
+        for closer in (self.jobs.close, self.mcp.close, self.connectors.close):
             try:
                 closer()
             except Exception:

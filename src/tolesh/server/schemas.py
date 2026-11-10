@@ -200,6 +200,29 @@ class ConnectorActionRun(BaseModel):
     approval_token: str | None = None
 
 
+class JobCreate(BaseModel):
+    """A scheduled or one-off background task."""
+
+    name: str = Field(default="", max_length=120)
+    goal: str = Field(..., min_length=1, max_length=8000)
+    kind: Literal["agent", "prompt"] = "agent"
+    schedule: Literal["once", "interval"] = "once"
+    interval_sec: float | None = Field(default=None, ge=5, le=604800)
+    run_at: float | None = None
+    max_runs: int | None = Field(default=None, ge=1, le=10000)
+    notify: bool = True
+    conversation_id: str | None = None
+
+
+class JobPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    goal: str | None = Field(default=None, max_length=8000)
+    schedule: Literal["once", "interval"] | None = None
+    interval_sec: float | None = Field(default=None, ge=5, le=604800)
+    max_runs: int | None = Field(default=None, ge=1, le=10000)
+    notify: bool | None = None
+
+
 class MediaDescribe(BaseModel):
     attachment_id: str = Field(..., min_length=1, max_length=64)
     prompt: str = Field(default="Describe this image.", max_length=2000)

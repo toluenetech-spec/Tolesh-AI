@@ -17,8 +17,8 @@ from fastapi import FastAPI, HTTPException, Request
 from .schemas import (
     AgentRunCreate, ArtifactAnalyse, ArtifactChart, ConnectorActionRun,
     ConnectorOAuthComplete, ConnectorOAuthStart, ConnectorTokenCreate,
-    MCPInvoke, MCPPromptRun, MCPServerPatch, MediaDescribe, MediaGenerate,
-    MediaSpeak,
+    JobCreate, JobPatch, MCPInvoke, MCPPromptRun, MCPServerPatch, MediaDescribe,
+    MediaGenerate, MediaSpeak,
 )
 
 
@@ -28,6 +28,7 @@ def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_agents(app, st)
     _register_artifacts(app, st)
     _register_media(app, st)
+    _register_jobs(app, st)
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
@@ -557,3 +558,95 @@ def _register_media(app: FastAPI, st: Any) -> None:
                    "X-Tolesh-Audio-Seconds": str(wav_duration(audio)),
                    "Content-Length": str(len(audio))}
         return Response(content=audio, media_type=mime, headers=headers)
+
+
+# -------------------------------------------------------------------- jobs
+def _register_jobs(app: FastAPI, st: Any) -> None:
+    from ..jobs import JobError
+
+    @app.get("/api/jobs")
+    def list_jobs() -> dict[str, Any]:
+        return {"jobs": st.jobs.list()}
+
+    @app.post("/api/jobs")
+    def create_job(body: JobCreate) -> dict[str, Any]:
+        try:
+            job = st.jobs.create(
+                body.name or body.goal[:60], goal=body.goal, kind=body.kind,
+                schedule=body.schedule, interval_sec=body.interval_sec,
+                next_run_at=body.run_at, max_runs=body.max_runs,
+                notify=body.notify, conversation_id=body.conversation_id)
+        except JobError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"job": job}
+
+    @app.get("/api/jobs/{job_id}")
+    def get_job(job_id: str) -> dict[str, Any]:
+        job = st.jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Unknown job.")
+        return {"job": job, "runs": st.jobs.runs(job_id)}
+
+    @app.patch("/api/jobs/{job_id}")
+    def patch_job(job_id: str, body: JobPatch) -> dict[str, Any]:
+        try:
+            return {"job": st.jobs.update(job_id, body.model_dump(exclude_none=True))}
+        except JobError as exc:
+            status = 404 if "Unknown" in str(exc) else 400
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+    @app.delete("/api/jobs/{job_id}")
+    def delete_job(job_id: str) -> dict[str, Any]:
+        if not st.jobs.delete(job_id):
+            raise HTTPException(status_code=404, detail="Unknown job.")
+        return {"status": "ok"}
+
+    @app.post("/api/jobs/{job_id}/pause")
+    def pause_job(job_id: str) -> dict[str, Any]:
+        try:
+            return {"job": st.jobs.pause(job_id)}
+        except JobError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/jobs/{job_id}/resume")
+    def resume_job(job_id: str) -> dict[str, Any]:
+        try:
+            return {"job": st.jobs.resume(job_id)}
+        except JobError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str) -> dict[str, Any]:
+        try:
+            return {"job": st.jobs.cancel(job_id)}
+        except JobError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/jobs/{job_id}/run")
+    def run_job_now(job_id: str) -> dict[str, Any]:
+        try:
+            return {"job": st.jobs.run_now(job_id)}
+        except JobError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/jobs/{job_id}/runs")
+    def job_runs(job_id: str, limit: int = 20) -> dict[str, Any]:
+        if st.jobs.get(job_id) is None:
+            raise HTTPException(status_code=404, detail="Unknown job.")
+        return {"runs": st.jobs.runs(job_id, limit=limit)}
+
+    @app.get("/api/notifications")
+    def list_notifications(unread: bool = False) -> dict[str, Any]:
+        items = st.jobs.notifications(unread_only=unread)
+        return {"notifications": items,
+                "unread": sum(1 for n in items if not n["read"])}
+
+    @app.post("/api/notifications/{notification_id}/read")
+    def read_notification(notification_id: str) -> dict[str, Any]:
+        if not st.jobs.mark_read(notification_id):
+            raise HTTPException(status_code=404, detail="Unknown notification.")
+        return {"status": "ok"}
+
+    @app.post("/api/notifications/read-all")
+    def read_all_notifications() -> dict[str, Any]:
+        return {"marked": st.jobs.mark_all_read()}
