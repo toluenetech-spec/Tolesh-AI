@@ -12,12 +12,13 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from .schemas import (
     AgentRunCreate, ArtifactAnalyse, ArtifactChart, ConnectorActionRun,
     ConnectorOAuthComplete, ConnectorOAuthStart, ConnectorTokenCreate,
-    MCPInvoke, MCPPromptRun, MCPServerPatch,
+    MCPInvoke, MCPPromptRun, MCPServerPatch, MediaDescribe, MediaGenerate,
+    MediaSpeak,
 )
 
 
@@ -26,6 +27,7 @@ def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_connectors(app, st)
     _register_agents(app, st)
     _register_artifacts(app, st)
+    _register_media(app, st)
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
@@ -384,6 +386,7 @@ def _register_agents(app: FastAPI, st: Any) -> None:
         # The router can be swapped (tests, model changes); the runner must use
         # the one this server is actually routing with.
         st.agents.router = st.router
+        st.agent_context.router = st.router
 
         def gen():
             for event in st.agents.stream(run_id, st.agent_context):
@@ -488,3 +491,69 @@ def _register_artifacts(app: FastAPI, st: Any) -> None:
             kind="image", mime="image/png", meta=chart_meta,
             conversation_id=body.conversation_id)
         return {"artifact": artifact}
+
+
+# ------------------------------------------------------------------- media
+def _register_media(app: FastAPI, st: Any) -> None:
+    from fastapi.responses import Response
+
+    from ..media import (MediaError, SpeechError, capabilities, describe_image,
+                         generate_image, synthesize, transcribe, wav_duration)
+
+    @app.get("/api/media/capabilities")
+    def media_capabilities() -> dict[str, Any]:
+        """What this machine can really do, including why it cannot."""
+        return capabilities()
+
+    @app.post("/api/media/describe")
+    def media_describe(body: MediaDescribe) -> dict[str, Any]:
+        meta = st.attachments.get(body.attachment_id)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="Unknown attachment.")
+        data = st.attachments.read_bytes(body.attachment_id)
+        if data is None:
+            raise HTTPException(status_code=400, detail="That upload is no longer on disk.")
+        if not (meta["mime"] or "").startswith("image/"):
+            raise HTTPException(status_code=400,
+                                detail="That file is not an image.")
+        try:
+            result = describe_image(st.router, data, prompt=body.prompt,
+                                    model=body.model, mime=meta["mime"])
+        except MediaError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"result": result, "attachment": {"id": meta["id"],
+                                                 "filename": meta["filename"]}}
+
+    @app.post("/api/media/images")
+    def media_image(body: MediaGenerate) -> dict[str, Any]:
+        try:
+            image, meta = generate_image(body.prompt, size=body.size, model=body.model)
+        except MediaError as exc:
+            status = 503 if exc.kind == "unconfigured" else 400
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+        artifact = st.artifacts.save_bytes(
+            f"image-{meta['model']}.png", image, kind="image", mime="image/png",
+            meta=meta, conversation_id=body.conversation_id)
+        return {"artifact": artifact}
+
+    @app.post("/api/media/transcribe")
+    async def media_transcribe(request: Request, language: str | None = None,
+                               model_size: str = "base") -> dict[str, Any]:
+        audio = await request.body()
+        try:
+            return transcribe(audio, language=language, model_size=model_size)
+        except SpeechError as exc:
+            status = 503 if exc.kind == "unavailable" else 400
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+    @app.post("/api/media/speak")
+    def media_speak(body: MediaSpeak) -> Any:
+        try:
+            audio, mime, meta = synthesize(body.text, voice=body.voice)
+        except SpeechError as exc:
+            status = 503 if exc.kind == "unconfigured" else 400
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+        headers = {"X-Tolesh-Voice-Engine": str(meta.get("engine", "")),
+                   "X-Tolesh-Audio-Seconds": str(wav_duration(audio)),
+                   "Content-Length": str(len(audio))}
+        return Response(content=audio, media_type=mime, headers=headers)

@@ -40,7 +40,7 @@ from ..artifacts import ArtifactStore
 from ..ai import ModelRouter, Registry, UsageLedger, discover_models
 from ..codeexec import network_isolation_available, run_python
 from ..connectors import ConnectorManager, ConnectorStore
-from .. import codeexec, netsearch
+from .. import codeexec, media, netsearch
 from ..conversation import ConversationManager
 from ..mcp_bridge import MCPManager, MCPServerStore
 from ..memory_ext import LayeredMemory
@@ -119,7 +119,8 @@ class AppState:
         self.agent_context = WorkspaceContext(
             mcp=self.mcp, connectors=self.connectors, attachments=self.attachments,
             conversations=self.conversations, codeexec=codeexec,
-            netsearch=netsearch, artifacts=self.artifacts)
+            netsearch=netsearch, artifacts=self.artifacts, media=media,
+            router=self.router)
         self.db_path = path
 
     def close(self) -> None:

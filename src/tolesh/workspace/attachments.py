@@ -189,9 +189,13 @@ class AttachmentStore:
                 f"{filename} is {len(data) / 1e6:.1f} MB; the limit is "
                 f"{MAX_BYTES / 1e6:.0f} MB."
             )
-        text = extract_text(filename, data, mime)
-        aid = secrets.token_hex(8)
+        # Images are stored for the vision tools; they carry no text to index,
+        # and asking the text extractor about a PNG would be a rejection.
         suffix = Path(filename).suffix.lower()
+        is_image = ((mime or "").lower().startswith("image/")
+                    or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"})
+        text = "" if is_image else extract_text(filename, data, mime)
+        aid = secrets.token_hex(8)
         target = self.root / f"{aid}{suffix}"
         target.write_bytes(data)
         try:

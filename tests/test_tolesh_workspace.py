@@ -351,9 +351,21 @@ def test_api_upload_then_chat_uses_the_file(client, monkeypatch):
 
 
 def test_api_rejects_an_unsupported_upload(client):
-    r = client.post("/api/attachments?filename=photo.png", content=b"\x89PNG\r\n")
+    # Images are accepted now (the vision tools need them); a binary format
+    # with no text layer and no vision path is still refused.
+    r = client.post("/api/attachments?filename=payload.exe", content=b"MZ\x00\x01")
     assert r.status_code == 400
     assert "not supported" in r.json()["detail"]
+
+
+def test_api_accepts_an_image_upload_without_indexing_text(client):
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    r = client.post("/api/attachments?filename=pixel.png", content=png,
+                    headers={"Content-Type": "image/png"})
+    assert r.status_code == 200
+    meta = r.json()["attachment"]
+    assert meta["mime"] == "image/png"
+    assert meta["chunks"] == 0
 
 
 def test_api_web_fetch_refuses_localhost(client):

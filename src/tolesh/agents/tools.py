@@ -263,6 +263,52 @@ def build_registry(ctx: Any, *, include_connectors: bool = True) -> ToolRegistry
             description="List the files produced so far.",
             args_hint="", risk="safe", source="artifacts", run=list_artifacts))
 
+    # ------------------------------------------------------------------ media
+    if getattr(ctx, "media", None) is not None:
+        def describe_image(args: dict[str, Any], approved: bool = False) -> ToolResult:
+            attachment_id = str(args.get("attachment_id") or "")
+            meta = ctx.attachments.get(attachment_id) if ctx.attachments else None
+            if meta is None:
+                return ToolResult(text=f"No uploaded image with id {attachment_id}.", ok=False)
+            data = ctx.attachments.read_bytes(attachment_id)
+            if data is None:
+                return ToolResult(text="That upload is no longer on disk.", ok=False)
+            try:
+                result = ctx.media.describe_image(
+                    ctx.router, data, prompt=str(args.get("prompt") or "Describe this image."),
+                    model=args.get("model") or None, mime=meta["mime"] or "image/png")
+            except Exception as exc:
+                return ToolResult(text=str(exc), ok=False)
+            return ToolResult(text=result["text"], data=result)
+
+        def generate_image(args: dict[str, Any], approved: bool = False) -> ToolResult:
+            try:
+                image, meta = ctx.media.generate_image(
+                    str(args.get("prompt") or ""),
+                    size=str(args.get("size") or "1024x1024"))
+            except Exception as exc:
+                return ToolResult(text=str(exc), ok=False)
+            if ctx.artifacts is None:
+                return ToolResult(text="Generated an image but no artifact store is available.",
+                                  ok=False)
+            artifact = ctx.artifacts.save_bytes(
+                f"image-{meta['model']}.png", image, kind="image", mime="image/png",
+                meta=meta)
+            return ToolResult(text=f"Image saved as artifact {artifact['id']}.",
+                              data={"artifact": artifact})
+
+        registry.add(ToolSpec(
+            name="describe_image",
+            description="Look at an uploaded image and answer a question about it.",
+            args_hint="attachment_id: str, prompt?: str", risk="safe",
+            source="media", run=describe_image))
+        registry.add(ToolSpec(
+            name="generate_image",
+            description="Generate an image from a text description and save it as a "
+                        "downloadable artifact.",
+            args_hint="prompt: str, size?: str", risk="elevated", source="media",
+            run=generate_image))
+
     # ------------------------------------------------------------------- MCP
     mcp = getattr(ctx, "mcp", None)
     if mcp is not None:

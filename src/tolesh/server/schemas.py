@@ -200,6 +200,24 @@ class ConnectorActionRun(BaseModel):
     approval_token: str | None = None
 
 
+class MediaDescribe(BaseModel):
+    attachment_id: str = Field(..., min_length=1, max_length=64)
+    prompt: str = Field(default="Describe this image.", max_length=2000)
+    model: str | None = Field(default=None, max_length=200)
+
+
+class MediaGenerate(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=4000)
+    size: Literal["256x256", "512x512", "1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
+    model: str | None = Field(default=None, max_length=200)
+    conversation_id: str | None = None
+
+
+class MediaSpeak(BaseModel):
+    text: str = Field(..., min_length=1, max_length=8000)
+    voice: str | None = Field(default=None, max_length=80)
+
+
 class ArtifactAnalyse(BaseModel):
     attachment_id: str = Field(..., min_length=1, max_length=64)
 
