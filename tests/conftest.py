@@ -223,7 +223,9 @@ def no_network(monkeypatch):
       its keyboard backend is imported uses ``/tmp/.X11-unix/X<n>``. Blocking
       it made ``dictation_engine`` cache ``pynput_keyboard = None`` for the
       whole session, which surfaced much later as an unrelated-looking
-      ``RuntimeError("pynput is not installed")`` in dictation tests.
+      ``RuntimeError`` from ``parse_hotkey`` in dictation tests. That
+      message used to read "pynput is not installed" even when pynput was
+      installed; it now reports the real import failure.
     * The X11 *TCP fallback* — when the unix socket is absent (no X server on
       this machine, only ``DISPLAY=:0`` in the environment) libxcb retries the
       same display over loopback on port ``6000 + display``. That is still a

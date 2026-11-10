@@ -168,8 +168,7 @@ async function refreshAll() {
     state.online = false;
     setConnection(false);
     setCoreState('offline');
-    $('composerFootnote').textContent =
-      'Engine offline. Reopen the Tolesh window from the tray, or restart the app.';
+    renderComposerNote(null);
     ui.toast(`Backend not connected: ${err.message}`, 'error');
   }
 }
@@ -189,8 +188,37 @@ async function silentRefresh() {
   } catch (_) { /* a failed background refresh must not break the chat */ }
 }
 
+/** The line under the composer has to describe the engine as it is now.
+ *  A fixed sentence claiming "nothing is sent to a model until you connect a
+ *  provider" is false the moment a provider is configured, so the text is
+ *  derived from /api/health instead of being baked into the markup. */
+function renderComposerNote(health) {
+  const el = $('composerFootnote');
+  if (!el) return;
+  if (!state.online) {
+    el.textContent = 'Engine offline — reopen the Tolesh window from the tray, or restart the app.';
+    return;
+  }
+  const real = (health?.providers_configured || []).filter((p) => p !== 'offline');
+  if (!real.length) {
+    el.textContent = 'No model connected — replies come from the local offline engine, '
+      + 'not a language model.';
+    return;
+  }
+  const chosen = String(health?.default_model || '');
+  const target = chosen && !chosen.startsWith('auto')
+    ? modelLabel(chosen)
+    : 'the best available model';
+  // "Configured" is the honest word: a provider can be listed here and still be
+  // unreachable (Ollama has a default URL and no key), which is what the
+  // per-provider connection test is for.
+  el.textContent = `Configured: ${real.join(', ')} · the router starts with ${target} `
+    + 'and falls back to a sibling model if it fails.';
+}
+
 function renderAll(health) {
   ui.renderEngine($('engineGrid'), health);
+  renderComposerNote(health);
   $('engineBadge').textContent = state.online ? 'online' : 'offline';
   ui.renderModelSelector($('modelSelector'), {
     providers: state.providers,

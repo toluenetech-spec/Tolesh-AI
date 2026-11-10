@@ -1,6 +1,7 @@
 /* Reusable, self-contained Tolesh UI components.
-   Every dynamic string is escaped. Message bodies are written with textContent.
-   See docs/COMPONENT-LIBRARY.md for contracts. */
+   Every dynamic string is escaped. Streaming text is written with textContent;
+   an assistant reply is converted to HTML only once, by renderMarkdown(), which
+   escapes first and can emit a fixed set of tags. See COMPONENT-LIBRARY.md. */
 
 export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -10,6 +11,133 @@ export function esc(s) {
 
 export function icon(id, cls = '') {
   return `<svg class="icon ${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+}
+
+/* --------------------------------------------------------------- markdown */
+/* Escape-first Markdown for assistant replies.
+ *
+ * Model output is untrusted text. Every character is escaped before any tag is
+ * produced, and the only tags this function can emit are a fixed list —
+ * p, strong, em, code, pre, ul, ol, li, h3–h6, blockquote, hr, table and
+ * http(s) anchors. A reply containing <img onerror=…> or [x](javascript:…) is
+ * therefore inert: the angle brackets are already entities and the link
+ * pattern only matches http/https.
+ *
+ * Streaming text stays plain (see setMessageText); this runs once, when the
+ * message is finished, so a half-arrived "**bold" never renders as garbage. */
+
+function inlineMd(s) {
+  const codes = [];
+  let t = s.replace(/`([^`\n]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  t = t.replace(/\[([^\]]{1,200})\]\((https?:\/\/[^\s)]{1,500})\)/g,
+    (_, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  t = t.replace(/(^|[\s(])_([^_\n]+)_/g, '$1<em>$2</em>');
+  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
+}
+
+const rowCells = (line) => line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|');
+
+export function renderMarkdown(text) {
+  const lines = esc(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let para = [];
+  let list = null;
+  let quote = [];
+  let fence = null;
+  let table = null;
+
+  const flushPara = () => {
+    if (para.length) { out.push(`<p>${inlineMd(para.join(' '))}</p>`); para = []; }
+  };
+  const flushList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const flushQuote = () => {
+    if (quote.length) { out.push(`<blockquote>${inlineMd(quote.join(' '))}</blockquote>`); quote = []; }
+  };
+  const flushTable = () => {
+    if (!table) return;
+    const [head, ...rows] = table;
+    const cells = (r, tag) => r.map((c) => `<${tag}>${inlineMd(c.trim())}</${tag}>`).join('');
+    out.push(`<div class="md-table"><table><thead><tr>${cells(head, 'th')}</tr></thead><tbody>`
+      + rows.map((r) => `<tr>${cells(r, 'td')}</tr>`).join('') + '</tbody></table></div>');
+    table = null;
+  };
+  const flushAll = () => { flushPara(); flushList(); flushQuote(); flushTable(); };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const line = raw.replace(/\s+$/, '');
+
+    if (fence) {
+      if (/^\s*```/.test(line)) {
+        out.push(`<pre><code>${fence.buf.join('\n')}</code></pre>`);
+        fence = null;
+      } else {
+        fence.buf.push(raw);
+      }
+      continue;
+    }
+    const open = line.match(/^\s*```(\w*)\s*$/);
+    if (open) { flushAll(); fence = { lang: open[1], buf: [] }; continue; }
+
+    if (!line.trim()) { flushAll(); continue; }
+
+    if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { flushAll(); out.push('<hr>'); continue; }
+
+    const h = line.match(/^\s*(#{1,4})\s+(.*)$/);
+    if (h) {
+      flushAll();
+      const lvl = Math.min(h[1].length + 2, 6);
+      out.push(`<h${lvl}>${inlineMd(h[2])}</h${lvl}>`);
+      continue;
+    }
+
+    const q = line.match(/^\s*>\s?(.*)$/);
+    if (q) { flushPara(); flushList(); flushTable(); quote.push(q[1]); continue; }
+    flushQuote();
+
+    const ul = line.match(/^\s*[-*+]\s+(.*)$/);
+    const ol = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (ul || ol) {
+      flushPara(); flushTable();
+      const want = ul ? 'ul' : 'ol';
+      if (list !== want) {
+        flushList();
+        // A code block between two numbered items ends the list; the next item
+        // keeps its own number instead of restarting at 1.
+        if (want === 'ol') {
+          const n = Number(ol[1]);
+          out.push(n > 1 ? `<ol start="${n}">` : '<ol>');
+        } else {
+          out.push('<ul>');
+        }
+        list = want;
+      }
+      out.push(`<li>${inlineMd(ul ? ul[1] : ol[2])}</li>`);
+      continue;
+    }
+    flushList();
+
+    const next = (lines[i + 1] || '').trim();
+    if (line.includes('|') && next.includes('-') && /^[\s|:-]+$/.test(next)) {
+      flushPara();
+      table = [rowCells(line)];
+      i += 1;
+      while (i + 1 < lines.length && (lines[i + 1] || '').includes('|')) {
+        i += 1;
+        table.push(rowCells(lines[i]));
+      }
+      flushTable();
+      continue;
+    }
+
+    para.push(line.trim());
+  }
+
+  flushAll();
+  if (fence) out.push(`<pre><code>${fence.buf.join('\n')}</code></pre>`);
+  return out.join('');
 }
 
 /* Shared modal plumbing. Every dialog gets a focus trap, Escape-to-close,
@@ -106,6 +234,13 @@ export function setMessageText(li, text, streaming = false) {
 export function finishMessage(li, modelLabel) {
   const caret = li.querySelector('.caret');
   if (caret) caret.remove();
+  const body = li.querySelector('.message-body');
+  // Only assistant replies are treated as Markdown: what the user typed is
+  // shown exactly as typed.
+  if (body && li.classList.contains('is-assistant')) {
+    body.classList.add('is-markdown');
+    body.innerHTML = renderMarkdown(body.textContent || '');
+  }
   if (modelLabel) {
     const meta = li.querySelector('.message-meta span:last-child');
     if (meta) meta.textContent = ` · ${modelLabel}`;
@@ -208,7 +343,7 @@ export function renderEngine(container, data) {
   const cells = [
     ['Status', data.status || '—'],
     ['Version', `v${data.version || '—'}`],
-    ['Providers ready', String((data.providers_configured || []).length)],
+    ['Providers configured', String((data.providers_configured || []).length)],
     ['Default model', data.default_model || 'auto'],
   ];
   container.innerHTML = cells.map(([k, v]) =>

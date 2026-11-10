@@ -471,6 +471,57 @@ body[data-core-state="speaking"] .orb-ring-1 { animation: core-ring-out 1.2s var
   background: var(--ink-800); padding: 2px 6px; border-radius: 4px;
 }
 
+/* Rendered Markdown replaces the pre-wrap plain text once a reply is done. */
+.message-body.is-markdown { white-space: normal; }
+.message-body.is-markdown > :first-child { margin-top: 0; }
+.message-body.is-markdown > :last-child { margin-bottom: 0; }
+.message-body.is-markdown p { margin: 0 0 0.72em; }
+.message-body.is-markdown ul,
+.message-body.is-markdown ol { margin: 0 0 0.72em; padding-left: 1.4em; }
+.message-body.is-markdown ul { list-style: disc outside; }
+.message-body.is-markdown ol { list-style: decimal outside; }
+.message-body.is-markdown ul ul { list-style: circle outside; margin-bottom: 0; }
+.message-body.is-markdown li > p { margin-bottom: 0.35em; }
+.message-body.is-markdown li { margin: 0.22em 0; }
+.message-body.is-markdown li::marker { color: var(--brass-deep); }
+.message-body.is-markdown h3,
+.message-body.is-markdown h4,
+.message-body.is-markdown h5,
+.message-body.is-markdown h6 {
+  font-family: var(--font-display); font-weight: 400; line-height: 1.28;
+  color: var(--ivory); margin: 1.15em 0 0.5em;
+}
+.message-body.is-markdown h3 { font-size: 1.3em; }
+.message-body.is-markdown h4 { font-size: 1.14em; }
+.message-body.is-markdown h5,
+.message-body.is-markdown h6 { font-size: 1.02em; }
+.message-body.is-markdown pre {
+  margin: 0 0 0.8em; padding: 12px 14px; overflow-x: auto;
+  background: var(--ink-900); border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+}
+.message-body.is-markdown pre code {
+  background: none; padding: 0; font-size: 0.85em; line-height: 1.62;
+}
+.message-body.is-markdown blockquote {
+  margin: 0 0 0.8em; padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--brass-24); color: var(--muted);
+}
+.message-body.is-markdown hr {
+  border: 0; border-top: 1px solid var(--line-soft); margin: 1.1em 0;
+}
+.message-body.is-markdown a {
+  color: var(--brass); text-decoration: underline; text-underline-offset: 2px;
+}
+.md-table { margin: 0 0 0.8em; overflow-x: auto; }
+.md-table table { border-collapse: collapse; font-size: 0.94em; }
+.md-table th,
+.md-table td {
+  padding: 6px 10px; border: 1px solid var(--line-soft);
+  text-align: left; vertical-align: top;
+}
+.md-table th { background: var(--ink-800); color: var(--ivory); font-weight: 500; }
+
 /* ---------------------------------------------------------------- composer */
 .composer-wrap { padding: var(--s-3) var(--s-10) var(--s-5); border-top: 1px solid var(--line-soft); }
 .stream-status { min-height: 18px; margin-bottom: 6px; font-size: var(--fs-xs); color: var(--brass-deep); letter-spacing: 0.04em; }

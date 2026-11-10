@@ -31,6 +31,7 @@
 | Responsive layout | [`scripts/capture_responsive.py`](scripts/capture_responsive.py) | Playwright + Chromium | Seven widths: overflow, sliced greeting, core decode, stacked vs. two columns |
 | Core states | [`scripts/capture_core_states.py`](scripts/capture_core_states.py) | Playwright + Chromium | idle / thinking / responding / idle / offline, transitions recorded |
 | Interface assets | [`tests/test_web_core_assets.py`](tests/test_web_core_assets.py) | `pytest` + Pillow | Asset integrity, no dead references, state/CSS parity, alpha extraction |
+| Reply rendering | [`tests/test_web_markdown.py`](tests/test_web_markdown.py) | `pytest` driving **Node** | The Markdown renderer's output and, more importantly, what it refuses to emit |
 | Desktop launch | [`scripts/verify_desktop_launch.py`](scripts/verify_desktop_launch.py) | `xvfb-run` + xcb + QtWebEngine | Real tray + real window + real engine, JavaScript probe inside QtWebEngine, screenshot, shutdown, restart persistence |
 | Desktop Qt | `tests/test_wizard_layout.py`, `tests/test_updater.py`, … | `pytest` under `xvfb-run` | Wizard layout and updater installers on a headless X server |
 | Accessibility | browser E2E subset + [ACCESSIBILITY.md](ACCESSIBILITY.md) | Playwright | Skip link, focus trap, listbox keyboard nav, reduced motion, live regions |
@@ -184,6 +185,19 @@ intrinsic size and has `alt=""`, that every state in `motion.js` has styling in
 (including refusing a non-uniform backdrop). The build script is not re-run here:
 its output depends on the local libwebp version, so a byte comparison would fail
 for reasons unrelated to the product.
+
+### `tests/test_web_markdown.py` — 12 tests
+
+`web/js/components.js` is the only place where model output becomes HTML, so it
+is executed rather than inspected: the module is copied to a temporary `.mjs`
+and imported by Node, and the resulting HTML is asserted. The interesting cases
+are the negative ones — a reply containing `<img onerror=…>` or
+`[x](javascript:…)` must render as visible text, never as markup or a live link.
+The file is skipped when Node is unavailable, never silently passed.
+
+Also covered: emphasis, inline and fenced code (escaped, not executed), tables,
+headings mapped to `h3`–`h6` so a reply cannot introduce a second `<h1>`, and
+numbered items keeping their numbers when a code block interrupts the list.
 
 ### `tests/test_tolesh_dahl_provider.py` — 16 tests
 

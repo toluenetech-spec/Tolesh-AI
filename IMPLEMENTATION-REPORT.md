@@ -435,6 +435,40 @@ formality), and `speaking` with real audio, because this sandbox has no output
 device. The state is wired to the synthesiser's own event; it was not observed
 producing sound here.
 
+## 9e. What running it for a live preview exposed
+
+The app was started in the sandbox for the owner to look at, and three things
+that only show up under real use surfaced within minutes:
+
+**1. Replies were shown as raw Markdown.** `**bold**` arrived as literal
+asterisks and fenced code as a wall of text, because the bubble was written with
+`textContent`. `renderMarkdown()` in `web/js/components.js` now converts a
+finished reply: it escapes every character *first*, then emits a fixed tag set
+(`p`, `strong`, `em`, `code`, `pre`, `ul`, `ol`, `li`, `h3`–`h6`, `blockquote`,
+`hr`, `table`, http(s) anchors). Streaming text stays plain so a half-arrived
+`**bold` never renders as garbage, and user messages are never rendered.
+`tests/test_web_markdown.py` executes the function in Node: `<img onerror=…>`
+stays visible text and `[x](javascript:…)` is never a link.
+
+**2. The line under the composer was false.** It read "Nothing is sent to a
+model until you connect a provider" while three providers were configured and a
+model was answering. It is now derived from `/api/health`, and says
+"Configured: …" rather than "Connected: …", because a provider can be listed and
+still be unreachable — Ollama has a default URL and no key, which is exactly what
+the per-provider connection test is for. The engine panel's "Providers ready"
+label became "Providers configured" for the same reason.
+
+**3. Two test artefacts were sitting in the real memory store.** "Desktop launch
+check marker" had been written twice by the launch harness into
+`~/.local/share/tolesh/tolesh.db` instead of a throwaway directory. Both were
+deleted through `DELETE /api/memory/{id}`.
+
+A fourth, smaller defect was fixed while diagnosing a red suite:
+`parse_hotkey()` raised `RuntimeError("pynput is not installed")` when pynput was
+installed and the actual cause was a dead X display — the message that sent two
+separate debugging sessions the wrong way. It now reports the captured import
+error and the real requirement.
+
 ## 10. Outstanding work
 
 - **Commercial distribution is blocked** — the inherited non-commercial licence

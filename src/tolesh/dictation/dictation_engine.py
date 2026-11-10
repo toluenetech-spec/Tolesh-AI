@@ -40,9 +40,28 @@ except (ImportError, OSError) as _audio_import_error:
 # on headless Linux), and a broken hotkey backend must not crash the app.
 try:
     from pynput import keyboard as pynput_keyboard
-except Exception as _pynput_import_error:
+    _pynput_import_error: BaseException | None = None
+except Exception as _exc:
     pynput_keyboard = None
-    debug_log(f"pynput unavailable, dictation hotkey disabled: {_pynput_import_error!r}", "dictation")
+    _pynput_import_error = _exc
+    debug_log(f"pynput unavailable, dictation hotkey disabled: {_exc!r}", "dictation")
+
+
+def _pynput_unavailable_message() -> str:
+    """Explain *why* the hotkey backend is missing.
+
+    "pynput is not installed" was demonstrably wrong during this project's own
+    testing: pynput was installed and the real cause was a dead X display, which
+    sent two separate debugging sessions in the wrong direction. The import
+    error is kept, so the message says what actually happened.
+    """
+    if _pynput_import_error is None:
+        detail = "the module was not imported"
+    else:
+        detail = f"{type(_pynput_import_error).__name__}: {_pynput_import_error}"
+    hint = ("dictation hotkeys need the pynput package and, on Linux, a running "
+            "X display (DISPLAY)")
+    return f"the keyboard backend is unavailable ({detail}); {hint}"
 
 
 def _create_keyboard_listener(*, on_press, on_release):
@@ -536,7 +555,7 @@ def parse_hotkey(combo: str):
     ``None`` and the hotkey activates when all modifiers are held.
     """
     if pynput_keyboard is None:
-        raise RuntimeError("pynput is not installed")
+        raise RuntimeError(_pynput_unavailable_message())
 
     parts = [p.strip().lower() for p in combo.split("+") if p.strip()]
     if not parts:

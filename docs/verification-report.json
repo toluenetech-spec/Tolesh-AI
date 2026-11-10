@@ -7,7 +7,7 @@
     "core_assets_loaded": true,
     "core_idle_state": true,
     "core_animates": true,
-    "core_size": 324,
+    "core_size": 325,
     "listbox_opened_by_keyboard": true,
     "listbox_escape_closes": true,
     "dialog_opened": true,
@@ -15,7 +15,7 @@
     "dialog_escape_closes": true,
     "core_state_on_send": "thinking",
     "core_state_on_send_ok": true,
-    "streamed_reply": "How far, how far! Na double gr",
+    "streamed_reply": "\n\nHow far now, Tolue! 👋",
     "core_returns_to_idle": true,
     "view_url_state": true,
     "view_restored_after_reload": true,
@@ -42,7 +42,7 @@
     "default_model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
     "database": "/root/.local/share/tolesh/tolesh.db",
     "static_frontend": true,
-    "time": 1794310350.6130054
+    "time": 1794313115.8064973
   },
   "passed": true,
   "boolean_checks": {

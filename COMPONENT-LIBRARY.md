@@ -92,7 +92,8 @@ name explicit properties (never `all`); scrollable overlays set
 | `toast(message, kind)` | `(string, 'info'\|'ok'\|'error') => void` | Transient feedback in `#toasts` |
 | `createMessage(role, text, opts)` | `(role, text, {streaming, model}) => HTMLLIElement` | Message row with optional streaming caret |
 | `setMessageText(li, text, streaming)` | `(HTMLLIElement, string, boolean) => void` | Update a streaming bubble via `textContent` |
-| `finishMessage(li, modelLabel)` | `(li, string) => void` | Remove caret, stamp the model used |
+| `finishMessage(li, modelLabel)` | `(li, string) => void` | Remove caret, render the reply as Markdown, stamp the model used |
+| `renderMarkdown(text)` | `(string) => string` | Escape-first Markdown for assistant replies: `p`, `strong`, `em`, `code`, `pre`, `ul`, `ol`, `li`, `h3`–`h6`, `blockquote`, `hr`, `table`, http(s) links |
 | `renderModelSelector(container, opts)` | `({providers, models, current, onSelect}) => void` | Listbox with full keyboard navigation |
 | `renderEngine(container, data)` | `(el, health) => void` | Status/version/provider cells |
 | `renderPermissions(container, items, cb)` | `(el, items, {onApprove, onDeny}) => void` | Approval cards |
@@ -198,6 +199,16 @@ states live on the shell (`.app-shell.context-collapsed`). Risk is always a
 `risk-*` class paired with a visible text label, never colour alone. All
 interpolated text passes through `esc()`; streaming text is assigned with
 `textContent`, never `innerHTML`.
+
+**The one exception is an assistant reply, and it is deliberately narrow.**
+While tokens arrive the bubble is plain text. When the reply finishes,
+`renderMarkdown()` runs once over that text: it escapes every character
+*first*, then emits a fixed tag set, and only turns `[label](url)` into an
+anchor when the URL starts with `http://` or `https://`. So `<img onerror=…>`
+stays visible text and `[x](javascript:…)` is never a link. User messages are
+never rendered — what someone types is shown exactly as typed.
+`tests/test_web_markdown.py` executes the function in Node and asserts both
+the formatting and the escape behaviour.
 
 The one exception is the core's state, which is a **data attribute on `<body>`**
 (`data-core-state`). It has to drive two elements in different subtrees — the
