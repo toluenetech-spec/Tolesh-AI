@@ -1,5 +1,5 @@
 {
-  "url": "http://127.0.0.1:8787",
+  "url": "http://127.0.0.1:8795",
   "checks": {
     "title": "Tolesh — your personal AI assistant",
     "skip_link": true,
@@ -7,7 +7,7 @@
     "core_assets_loaded": true,
     "core_idle_state": true,
     "core_animates": true,
-    "core_size": 325,
+    "core_size": 328,
     "listbox_opened_by_keyboard": true,
     "listbox_escape_closes": true,
     "dialog_opened": true,
@@ -15,7 +15,7 @@
     "dialog_escape_closes": true,
     "core_state_on_send": "thinking",
     "core_state_on_send_ok": true,
-    "streamed_reply": "\n\nHow far now, Tolue! 👋",
+    "streamed_reply": "How far! I dey, no wahala — ever",
     "core_returns_to_idle": true,
     "view_url_state": true,
     "view_restored_after_reload": true,
@@ -37,12 +37,27 @@
     "providers_configured": [
       "offline",
       "ollama",
-      "dahl"
+      "dahl",
+      "tokenharbor"
     ],
-    "default_model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
-    "database": "/root/.local/share/tolesh/tolesh.db",
+    "default_model": null,
+    "fallback_order": [
+      "tokenharbor:deepseek-v4.1-flash",
+      "tokenharbor:deepseek-v4.1-flash:free",
+      "dahl:zai-org/GLM-5.3-Flash",
+      "tokenharbor:mimo-v2.6-flash:free",
+      "dahl:MiniMaxAI/MiniMax-M2.7",
+      "ollama:llama3.1:8b",
+      "ollama:qwen2.5:7b",
+      "ollama:gemma2:9b",
+      "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+      "tokenharbor:mimo-v2.6-flash",
+      "tokenharbor:glm-5.3-flash",
+      "offline:tolesh-offline"
+    ],
+    "database": "/tmp/tb8/data/tolesh/tolesh.db",
     "static_frontend": true,
-    "time": 1794313115.8064973
+    "time": 1794329386.562588
   },
   "passed": true,
   "boolean_checks": {
