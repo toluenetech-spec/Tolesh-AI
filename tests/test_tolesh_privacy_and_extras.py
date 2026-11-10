@@ -24,12 +24,14 @@ class FakeStreamRouter:
     def __init__(self, text: str = "A fresh answer."):
         self.text = text
         self.calls: list[list[dict]] = []
+        self.kwargs: list[dict] = []
 
     def select(self, task="chat", preferred=None):
         return SimpleNamespace(label="fake", id="fake")
 
     def stream(self, messages, **kwargs):
         self.calls.append([dict(m) for m in messages])
+        self.kwargs.append(dict(kwargs))
         yield RouterEvent("token", self.text)
         yield RouterEvent("done", None, model_id="fake-model")
 
@@ -138,6 +140,22 @@ def test_assistant_crud_and_instruction_injection(client):
 
     assert client.delete(f"/api/assistants/{created['id']}").json()["status"] == "ok"
     assert client.patch("/api/assistants/nope", json={"name": "x"}).status_code == 404
+
+
+def test_assistant_model_applies_only_when_the_request_has_none(client):
+    """A saved assistant carries its model; the picker still wins."""
+    client.state.router = FakeStreamRouter()
+    created = client.post("/api/assistants", json={
+        "name": "Editor", "model": "asst-model"}).json()["assistant"]
+
+    ok = client.post("/api/chat", json={"message": "hi",
+                                        "assistant_id": created["id"]})
+    assert ok.status_code == 200
+    assert client.state.router.kwargs[-1]["model"] == "asst-model"
+
+    client.post("/api/chat", json={"message": "hi", "assistant_id": created["id"],
+                                   "model": "picked"})
+    assert client.state.router.kwargs[-1]["model"] == "picked"
 
 
 def test_templates_can_be_created_and_deleted(client):

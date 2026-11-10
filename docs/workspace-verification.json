@@ -1,0 +1,81 @@
+{
+  "url": "http://127.0.0.1:8792",
+  "checks": {
+    "rail_button_present": true,
+    "drawer_opens": true,
+    "eight_tabs": true,
+    "all_tabs_render": true,
+    "mcp_server_saved": true,
+    "mcp_server_connected": true,
+    "mcp_tools_listed": true,
+    "agent_run_reports": true,
+    "upload_lands": true,
+    "profile_runs": true,
+    "chart_renders": true,
+    "artifact_zooms": true,
+    "lightbox_escape_keeps_drawer": true,
+    "task_scheduled": true,
+    "assistant_saved": true,
+    "assistant_selectable": true,
+    "assistant_sets_composer": true,
+    "settings_persist": true,
+    "telemetry_locked": true,
+    "connectors_catalogued": true,
+    "no_horizontal_overflow": true,
+    "escape_closes": true,
+    "focus_returns": true
+  },
+  "errors": [],
+  "shots": [
+    "docs/img/workspace/tab-conversation.png",
+    "docs/img/workspace/tab-agents.png",
+    "docs/img/workspace/tab-mcp.png",
+    "docs/img/workspace/tab-connections.png",
+    "docs/img/workspace/tab-files.png",
+    "docs/img/workspace/tab-tasks.png",
+    "docs/img/workspace/tab-assistants.png",
+    "docs/img/workspace/tab-settings.png",
+    "docs/img/workspace/mcp-connected.png",
+    "docs/img/workspace/agents-run.png",
+    "docs/img/workspace/files-artifact.png",
+    "docs/img/workspace/files-artifacts-grid.png",
+    "docs/img/workspace/artifact-lightbox.png",
+    "docs/img/workspace/settings.png",
+    "docs/img/workspace/width-320.png",
+    "docs/img/workspace/width-768.png"
+  ],
+  "health": {
+    "status": "ok",
+    "version": "0.1.0",
+    "product": "Tolesh",
+    "providers_configured": [
+      "offline",
+      "ollama",
+      "dahl",
+      "tokenharbor"
+    ],
+    "default_model": null,
+    "fallback_order": [
+      "tokenharbor:deepseek-v4.1-flash",
+      "tokenharbor:deepseek-v4.1-flash:free",
+      "dahl:zai-org/GLM-5.3-Flash",
+      "tokenharbor:mimo-v2.6-flash:free",
+      "dahl:MiniMaxAI/MiniMax-M2.7",
+      "ollama:llama3.1:8b",
+      "ollama:qwen2.5:7b",
+      "ollama:gemma2:9b",
+      "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+      "tokenharbor:mimo-v2.6-flash",
+      "tokenharbor:glm-5.3-flash",
+      "offline:tolesh-offline"
+    ],
+    "database": "/tmp/tb5/data/tolesh/tolesh.db",
+    "static_frontend": true,
+    "time": 1794328267.573408
+  },
+  "agent_run": {
+    "state": "Done in 1 steps",
+    "log": "\u2014 step 1 \u2014\nfinal: Hello! It's nice to meet you.\n"
+  },
+  "passed": true
+}

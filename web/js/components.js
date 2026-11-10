@@ -183,6 +183,9 @@ function mountDialog(html, onDismiss = () => {}) {
 export function toast(message, kind = 'info') {
   const host = document.getElementById('toasts');
   if (!host) return;
+  // Three at a time. A burst of confirmations must not become a wall that
+  // covers the panel the user is working in.
+  while (host.children.length >= 3) host.firstElementChild.remove();
   const el = document.createElement('div');
   el.className = `toast is-${kind}`;
   const glyph = kind === 'error' ? 'info' : kind === 'ok' ? 'check' : 'bolt';

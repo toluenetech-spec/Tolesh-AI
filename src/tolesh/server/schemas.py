@@ -217,7 +217,6 @@ class AssistantCreate(BaseModel):
     instructions: str = Field(default="", max_length=8000)
     model: str = Field(default="", max_length=200)
     greeting: str = Field(default="", max_length=2000)
-    tools: list[str] = Field(default_factory=list, max_length=50)
     icon: str = Field(default="", max_length=16)
 
 

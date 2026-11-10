@@ -3,6 +3,7 @@
    routes models, gates computer actions and speaks/listens via the browser. */
 
 import * as api from './api.js';
+import { initWorkspace } from './workspace.js';
 import * as ui from './components.js';
 import { initMotion, animateIn, setOrbListening, setCoreState, prefersReducedMotion } from './motion.js';
 import { VoiceController } from './voice.js';
@@ -137,6 +138,7 @@ async function boot() {
 function newConversation() {
   if (state.streaming && state.abort) state.abort.abort();
   state.conversationId = null;
+  announceConversation();
   state.conversationMeta = null;
   state.titled = false;
   state.streaming = false;
@@ -447,6 +449,7 @@ async function send(text) {
     switch (ev.type) {
       case 'meta': {
         state.conversationId = ev.data.conversation_id;
+        announceConversation();
         if (!state.titled) {
           state.titled = true;
           const title = t.length > 42 ? t.slice(0, 42) + '…' : t;
@@ -531,6 +534,8 @@ async function send(text) {
       web_search: state.webSearch,
       web_urls: urls,
       project_id: targetProjectId(),
+      // Set by the workspace drawer when the user picks a saved assistant.
+      assistant_id: window.__toleshAssistantId || undefined,
     }, onEvent, controller.signal);
   } catch (err) {
     if (err.name !== 'AbortError') {
@@ -565,6 +570,15 @@ async function send(text) {
 }
 
 /* -------------------------------------------------- history and projects */
+/* The workspace drawer is a separate module and must know which conversation
+   is open. One explicit bridge beats reaching into another module's state. */
+function announceConversation() {
+  window.__toleshConversationId = state.conversationId;
+  window.dispatchEvent(new CustomEvent('tolesh:conversation', {
+    detail: { id: state.conversationId },
+  }));
+}
+
 function currentConversation() {
   if (!state.conversationId) return null;
   const found = state.conversations.find((c) => c.id === state.conversationId);
@@ -657,6 +671,7 @@ async function openConversation(id) {
       api.get(`/api/conversations/${encodeURIComponent(id)}`),
     ]);
     state.conversationId = id;
+    announceConversation();
     state.conversationMeta = meta.conversation;
     state.titled = true;
     state.attachments = [];
@@ -971,3 +986,11 @@ const voice = new VoiceController({
 });
 
 boot();
+
+/* The workspace drawer is optional chrome: if it fails to initialise, chat
+   must still work. */
+try {
+  initWorkspace();
+} catch (err) {
+  console.error('workspace init failed', err);
+}

@@ -721,7 +721,7 @@ def _register_assistants(app: FastAPI, st: Any) -> None:
             return {"assistant": st.assistants.create_assistant(
                 body.name, instructions=body.instructions,
                 description=body.description, model=body.model,
-                greeting=body.greeting, tools=body.tools, icon=body.icon)}
+                greeting=body.greeting, icon=body.icon)}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

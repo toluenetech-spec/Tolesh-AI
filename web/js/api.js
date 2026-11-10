@@ -128,3 +128,37 @@ export async function chatStream(body, onEvent, signal) {
     }
   }
 }
+
+/** POST and consume a server-sent event stream (agent runs, regeneration).
+ *  Kept separate from `chatStream` because callers here own the payload. */
+export async function streamPost(path, body, onEvent, signal) {
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: headers(true),
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    let detail = `${res.status} ${res.statusText}`;
+    try { detail = (await res.json()).detail || detail; } catch (_) { /* noop */ }
+    throw new Error(detail);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() || '';
+    for (const part of parts) {
+      for (const line of part.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const raw = line.slice(5).trim();
+        if (!raw) continue;
+        try { onEvent(JSON.parse(raw)); } catch (_) { /* skip malformed frame */ }
+      }
+    }
+  }
+}

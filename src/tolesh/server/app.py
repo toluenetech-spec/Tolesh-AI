@@ -474,6 +474,11 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
 
     @app.post("/api/chat")
     def chat(req: ChatRequest) -> StreamingResponse:
+        # A saved assistant may carry its own model. An explicit model on the
+        # request always wins, so the model picker is never overridden silently.
+        if not req.model and req.assistant_id:
+            assistant = st.assistants.get_assistant(req.assistant_id) or {}
+            req.model = assistant.get("model") or None
         cid = req.conversation_id or st.conversations.create(
             project_id=req.project_id)["id"]
         st.conversations.add_message(cid, "user", req.message)
