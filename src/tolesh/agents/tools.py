@@ -166,6 +166,103 @@ def build_registry(ctx: Any, *, include_connectors: bool = True) -> ToolRegistry
             description="Search the user's uploaded files and return matching passages.",
             args_hint="query: str", risk="safe", source="files", run=search_files))
 
+    # -------------------------------------------------------------- artifacts
+    if getattr(ctx, "artifacts", None) is not None:
+        def _read_attachment(attachment_id: str) -> tuple[bytes, str]:
+            if not attachment_id:
+                raise ValueError("attachment_id is required: upload the file first.")
+            meta = ctx.attachments.get(attachment_id) if ctx.attachments else None
+            if meta is None:
+                raise ValueError(f"No uploaded file with id {attachment_id}.")
+            data = ctx.attachments.read_bytes(attachment_id)
+            if data is None:
+                raise ValueError("That upload's file is no longer on disk.")
+            return data, meta["filename"]
+
+        def analyse_dataset(args: dict[str, Any], approved: bool = False) -> ToolResult:
+            from ..artifacts import summarise, summarise_text
+
+            data, name = _read_attachment(str(args.get("attachment_id") or ""))
+            profile = summarise(data, name=name)
+            return ToolResult(text=summarise_text(profile), data=profile)
+
+        def make_chart(args: dict[str, Any], approved: bool = False) -> ToolResult:
+            from ..artifacts import chart_png
+
+            data, name = _read_attachment(str(args.get("attachment_id") or ""))
+            png, meta = chart_png(
+                data, chart_type=str(args.get("chart_type") or "bar"),
+                x=str(args.get("x") or ""), y=str(args.get("y") or ""),
+                title=str(args.get("title") or ""), name=name)
+            artifact = ctx.artifacts.save_bytes(
+                f"{meta['chart_type']}-{meta['x']}.png", png, kind="image",
+                mime="image/png", meta=meta,
+                conversation_id=args.get("conversation_id") or None)
+            return ToolResult(
+                text=f"Chart saved as artifact {artifact['id']} "
+                     f"({artifact['size']} bytes).",
+                data={"artifact": artifact})
+
+        def make_report(args: dict[str, Any], approved: bool = False) -> ToolResult:
+            from ..artifacts import report_html
+
+            sections = args.get("sections")
+            if isinstance(sections, str):
+                sections = [{"heading": "", "body": sections}]
+            if not isinstance(sections, list):
+                sections = []
+            page = report_html(str(args.get("title") or "Report"), sections)
+            artifact = ctx.artifacts.save_text(
+                f"{args.get('title') or 'report'}.html", page, kind="report",
+                mime="text/html",
+                conversation_id=args.get("conversation_id") or None)
+            return ToolResult(text=f"Report saved as artifact {artifact['id']}.",
+                              data={"artifact": artifact})
+
+        def save_text_artifact(args: dict[str, Any], approved: bool = False) -> ToolResult:
+            name = str(args.get("name") or "note.md")
+            artifact = ctx.artifacts.save_text(
+                name, str(args.get("content") or ""),
+                conversation_id=args.get("conversation_id") or None)
+            return ToolResult(text=f"Saved {artifact['name']} as {artifact['id']}.",
+                              data={"artifact": artifact})
+
+        def list_artifacts(args: dict[str, Any], approved: bool = False) -> ToolResult:
+            items = ctx.artifacts.list(limit=30)
+            if not items:
+                return ToolResult(text="No artifacts yet.")
+            return ToolResult(text="\n".join(
+                f"- {a['id']} {a['name']} ({a['kind']}, {a['size']} bytes)"
+                for a in items), data={"artifacts": items})
+
+        registry.add(ToolSpec(
+            name="analyse_dataset",
+            description="Profile an uploaded CSV/Excel/JSON table: columns, types, "
+                        "missing values, ranges and a sample.",
+            args_hint="attachment_id: str", risk="safe", source="artifacts",
+            run=analyse_dataset))
+        registry.add(ToolSpec(
+            name="make_chart",
+            description="Draw a bar, line, scatter, hist or pie chart from an uploaded "
+                        "table and save it as a downloadable image.",
+            args_hint="attachment_id: str, chart_type: str, x: str, y?: str, title?: str",
+            risk="safe", source="artifacts", run=make_chart))
+        registry.add(ToolSpec(
+            name="make_report",
+            description="Render an HTML report with headings and body text, saved as a "
+                        "downloadable artifact.",
+            args_hint='title: str, sections: [{"heading": str, "body": str}]',
+            risk="safe", source="artifacts", run=make_report))
+        registry.add(ToolSpec(
+            name="save_text_artifact",
+            description="Save text (Markdown, code, notes) as a downloadable file.",
+            args_hint="name: str, content: str", risk="safe", source="artifacts",
+            run=save_text_artifact))
+        registry.add(ToolSpec(
+            name="list_artifacts",
+            description="List the files produced so far.",
+            args_hint="", risk="safe", source="artifacts", run=list_artifacts))
+
     # ------------------------------------------------------------------- MCP
     mcp = getattr(ctx, "mcp", None)
     if mcp is not None:

@@ -260,6 +260,18 @@ class AttachmentStore:
                 "mime": row[3], "size": row[4], "sha256": row[5],
                 "created_at": row[6], "chunks": row[7]}
 
+    def read_bytes(self, attachment_id: str) -> bytes | None:
+        """The original file, for analysis tools that need the real bytes."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+        if row is None or not row[0]:
+            return None
+        try:
+            return Path(row[0]).read_bytes()
+        except OSError:
+            return None
+
     def list(self, conversation_id: str | None = None) -> list[dict[str, Any]]:
         sql = ("SELECT id,conversation_id,filename,mime,size,sha256,created_at "
                "FROM attachments")

@@ -36,6 +36,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..agents import AgentHistory, AgentRunner, WorkspaceContext
+from ..artifacts import ArtifactStore
 from ..ai import ModelRouter, Registry, UsageLedger, discover_models
 from ..codeexec import network_isolation_available, run_python
 from ..connectors import ConnectorManager, ConnectorStore
@@ -99,6 +100,12 @@ class AppState:
 
             root = tempfile.mkdtemp(prefix="tolesh-att-")
         self.attachments = AttachmentStore(db_path=path, root=Path(root) if root else None)
+        artifact_root = None
+        if in_memory:
+            import tempfile as _tempfile
+
+            artifact_root = Path(_tempfile.mkdtemp(prefix="tolesh-art-"))
+        self.artifacts = ArtifactStore(db_path=path, root=artifact_root)
         self.gate = PermissionGate(db_path=path)
         self.tools = ComputerTools(self.gate)
         # MCP sessions are process-wide state (a server may own a browser), so
@@ -112,7 +119,7 @@ class AppState:
         self.agent_context = WorkspaceContext(
             mcp=self.mcp, connectors=self.connectors, attachments=self.attachments,
             conversations=self.conversations, codeexec=codeexec,
-            netsearch=netsearch)
+            netsearch=netsearch, artifacts=self.artifacts)
         self.db_path = path
 
     def close(self) -> None:
@@ -122,7 +129,7 @@ class AppState:
             except Exception:
                 pass
         for obj in (self.ledger, self.memory, self.conversations, self.projects,
-                    self.attachments, self.agent_history, self.gate):
+                    self.attachments, self.artifacts, self.agent_history, self.gate):
             try:
                 obj.close()
             except Exception:

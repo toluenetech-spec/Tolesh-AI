@@ -45,7 +45,16 @@ def network_isolation_available() -> bool:
 
 def run_python(code: str, *, timeout: int = DEFAULT_TIMEOUT,
                memory_mb: int = DEFAULT_MEMORY_MB,
-               isolate_network: bool = True) -> dict[str, Any]:
+               isolate_network: bool = True,
+               files: dict[str, str] | None = None,
+               collect: str | Path | None = None) -> dict[str, Any]:
+    """Run *code* in a disposable directory.
+
+    ``files`` seeds the working directory (a multi-file task needs its inputs),
+    and ``collect`` names a directory that receives the files the script
+    produced, so a chart or a report survives the sandbox. Both are bounded:
+    names may not escape the directory and the total size is capped.
+    """
     if not (code or "").strip():
         raise ValueError("There is no code to run.")
     if timeout < 1 or timeout > 120:
@@ -54,6 +63,7 @@ def run_python(code: str, *, timeout: int = DEFAULT_TIMEOUT,
     workdir = Path(tempfile.mkdtemp(prefix="tolesh-run-"))
     script = workdir / "main.py"
     script.write_text(code, encoding="utf-8")
+    seeded = _seed_files(workdir, files or {})
     isolated = bool(isolate_network) and network_isolation_available()
 
     argv = ([_UNSHARE, "-n"] if isolated else []) + [sys.executable, "-I", "-u", str(script)]
@@ -80,16 +90,22 @@ def run_python(code: str, *, timeout: int = DEFAULT_TIMEOUT,
         resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
 
     started = time.time()
+    produced: list[dict[str, Any]] = []
     try:
         proc = subprocess.run(argv, cwd=str(workdir), env=env, capture_output=True,
                               timeout=timeout, preexec_fn=_limits)
         timed_out = False
+        # Collected before the finally-block deletes the working directory.
+        if collect:
+            produced = _collect_files(workdir, Path(collect), seeded)
     except subprocess.TimeoutExpired as exc:
         elapsed = time.time() - started
+        if collect:
+            produced = _collect_files(workdir, Path(collect), seeded)
         return {"ok": False, "timed_out": True, "exit_code": None,
                 "stdout": _clip(exc.stdout), "stderr": _clip(exc.stderr),
                 "duration_ms": round(elapsed * 1000),
-                "network_isolated": isolated,
+                "network_isolated": isolated, "files": produced,
                 "message": f"Stopped after {timeout}s — the script was still running."}
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -106,7 +122,66 @@ def run_python(code: str, *, timeout: int = DEFAULT_TIMEOUT,
     return {"ok": proc.returncode == 0, "timed_out": timed_out,
             "exit_code": proc.returncode, "stdout": stdout, "stderr": stderr,
             "duration_ms": round(elapsed * 1000), "network_isolated": isolated,
-            "message": message}
+            "files": produced, "message": message}
+
+
+MAX_FILES = 20
+MAX_COLLECT_BYTES = 12 * 1024 * 1024
+
+
+def _safe_name(name: str) -> str:
+    base = Path(str(name).replace("\\", "/")).name
+    cleaned = "".join(ch for ch in base if ch.isalnum() or ch in "._- ")
+    return cleaned.strip(" .")[:80]
+
+
+def _seed_files(workdir: Path, files: dict[str, str]) -> set[str]:
+    seeded: set[str] = set()
+    for name, content in list(files.items())[:MAX_FILES]:
+        safe = _safe_name(name)
+        if not safe:
+            continue
+        target = workdir / safe
+        try:
+            target.write_text(str(content), encoding="utf-8")
+            seeded.add(safe)
+        except OSError:
+            continue
+    return seeded
+
+
+def _collect_files(workdir: Path, destination: Path, seeded: set[str]) -> list[dict[str, Any]]:
+    """Copy files the script created into a directory that outlives it."""
+    out: list[dict[str, Any]] = []
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return out
+    total = 0
+    for path in sorted(workdir.rglob("*")):
+        if not path.is_file() or path.name == "main.py":
+            continue
+        relative = path.relative_to(workdir).as_posix()
+        if relative in seeded:
+            continue
+        if len(out) >= MAX_FILES:
+            break
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        total += size
+        if total > MAX_COLLECT_BYTES:
+            break
+        safe = _safe_name(relative)
+        if not safe:
+            continue
+        try:
+            shutil.copy2(path, destination / safe)
+        except OSError:
+            continue
+        out.append({"name": safe, "size": size})
+    return out
 
 
 def _clip(raw: Any) -> str:

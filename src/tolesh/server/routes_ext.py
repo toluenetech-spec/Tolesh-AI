@@ -15,9 +15,9 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from .schemas import (
-    AgentRunCreate, ConnectorActionRun, ConnectorOAuthComplete,
-    ConnectorOAuthStart, ConnectorTokenCreate, MCPInvoke, MCPPromptRun,
-    MCPServerPatch,
+    AgentRunCreate, ArtifactAnalyse, ArtifactChart, ConnectorActionRun,
+    ConnectorOAuthComplete, ConnectorOAuthStart, ConnectorTokenCreate,
+    MCPInvoke, MCPPromptRun, MCPServerPatch,
 )
 
 
@@ -25,6 +25,7 @@ def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_mcp(app, st)
     _register_connectors(app, st)
     _register_agents(app, st)
+    _register_artifacts(app, st)
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
@@ -410,3 +411,80 @@ def _sse(payload: dict[str, Any]) -> str:
     import json as _json
 
     return "data: " + _json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+
+# --------------------------------------------------------------- artifacts
+def _register_artifacts(app: FastAPI, st: Any) -> None:
+    from fastapi.responses import FileResponse
+
+    from ..artifacts import AnalysisError, chart_png, summarise, summarise_text
+
+    @app.get("/api/artifacts")
+    def list_artifacts(conversation_id: str | None = None,
+                       kind: str | None = None) -> dict[str, Any]:
+        return {"artifacts": st.artifacts.list(conversation_id=conversation_id,
+                                               kind=kind),
+                "stats": st.artifacts.stats()}
+
+    @app.get("/api/artifacts/{artifact_id}")
+    def get_artifact(artifact_id: str) -> dict[str, Any]:
+        meta = st.artifacts.get(artifact_id)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="Unknown artifact.")
+        return {"artifact": meta}
+
+    @app.get("/api/artifacts/{artifact_id}/download")
+    def download_artifact(artifact_id: str) -> Any:
+        """Serve the file itself.
+
+        ``FileResponse`` sets the filename from the stored, sanitised name, so a
+        crafted name cannot inject a header or escape the artifact directory.
+        """
+        meta = st.artifacts.get(artifact_id)
+        path = st.artifacts.path(artifact_id)
+        if meta is None or path is None:
+            raise HTTPException(status_code=404, detail="Unknown artifact.")
+        return FileResponse(str(path), media_type=meta["mime"] or "application/octet-stream",
+                            filename=meta["name"])
+
+    @app.delete("/api/artifacts/{artifact_id}")
+    def delete_artifact(artifact_id: str) -> dict[str, Any]:
+        if not st.artifacts.delete(artifact_id):
+            raise HTTPException(status_code=404, detail="Unknown artifact.")
+        return {"status": "ok"}
+
+    @app.post("/api/artifacts/analyse")
+    def analyse(body: ArtifactAnalyse) -> dict[str, Any]:
+        """Profile an uploaded table. Real statistics, no model involved."""
+        meta = st.attachments.get(body.attachment_id)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="Unknown attachment.")
+        data = st.attachments.read_bytes(body.attachment_id)
+        if data is None:
+            raise HTTPException(status_code=400, detail="That upload is no longer on disk.")
+        try:
+            profile = summarise(data, name=meta["filename"])
+        except AnalysisError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"profile": profile, "summary": summarise_text(profile),
+                "attachment": {"id": meta["id"], "filename": meta["filename"]}}
+
+    @app.post("/api/artifacts/chart")
+    def make_chart(body: ArtifactChart) -> dict[str, Any]:
+        meta = st.attachments.get(body.attachment_id)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="Unknown attachment.")
+        data = st.attachments.read_bytes(body.attachment_id)
+        if data is None:
+            raise HTTPException(status_code=400, detail="That upload is no longer on disk.")
+        try:
+            png, chart_meta = chart_png(data, chart_type=body.chart_type,
+                                        x=body.x, y=body.y, title=body.title,
+                                        name=meta["filename"])
+        except AnalysisError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        artifact = st.artifacts.save_bytes(
+            f"{chart_meta['chart_type']}-{chart_meta['x']}.png", png,
+            kind="image", mime="image/png", meta=chart_meta,
+            conversation_id=body.conversation_id)
+        return {"artifact": artifact}

@@ -200,6 +200,19 @@ class ConnectorActionRun(BaseModel):
     approval_token: str | None = None
 
 
+class ArtifactAnalyse(BaseModel):
+    attachment_id: str = Field(..., min_length=1, max_length=64)
+
+
+class ArtifactChart(BaseModel):
+    attachment_id: str = Field(..., min_length=1, max_length=64)
+    chart_type: Literal["bar", "line", "scatter", "hist", "pie"] = "bar"
+    x: str = Field(default="", max_length=200)
+    y: str = Field(default="", max_length=200)
+    title: str = Field(default="", max_length=200)
+    conversation_id: str | None = None
+
+
 class AgentRunCreate(BaseModel):
     """A task for the multi-step agent."""
 
