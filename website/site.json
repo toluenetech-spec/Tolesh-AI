@@ -1,0 +1,34 @@
+{
+  "name": "Tolesh",
+  "base_url": "https://barissencan.com/tolesh/",
+  "repository": "https://github.com/isair/jarvis",
+  "summary": "Tolesh is a local AI assistant for macOS, Windows and Linux. Talk naturally, chat by text, remember past conversations and dictate into other apps, with models and memory on hardware you control.",
+  "pages": [
+    {
+      "route": "",
+      "template": "home.html",
+      "title": "Tolesh: a private local AI assistant for your desktop",
+      "description": "Meet Tolesh, a private local AI assistant with voice and text chat, personal memory, dictation and MCP tools for macOS, Windows and Linux.",
+      "key": "home"
+    },
+    {
+      "route": "getting-started/",
+      "template": "getting-started.html",
+      "title": "Get started with Tolesh: download and local model setup",
+      "description": "Download Tolesh for macOS, Windows or Linux, choose local speech and chat models, and start talking or typing. No subscription is required.",
+      "key": "getting_started"
+    },
+    {
+      "route": "privacy/",
+      "template": "privacy.html",
+      "title": "Tolesh privacy, offline use and licensing questions",
+      "description": "Understand where Tolesh stores memory, which features work offline, when tools use the network, and what its non-commercial licence permits.",
+      "key": "privacy"
+    }
+  ],
+  "author": {
+    "name": "Baris Sencan",
+    "url": "https://github.com/isair"
+  },
+  "source_branch": "main"
+}
