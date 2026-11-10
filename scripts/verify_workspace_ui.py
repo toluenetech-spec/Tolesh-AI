@@ -381,6 +381,26 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
     check["escape_closes"] = page.get_attribute("#wsDrawer", "aria-hidden") == "true"
+
+    # Focus must stay inside a drawer that declares aria-modal.
+    page.click("#workspaceRailBtn")
+    page.wait_for_timeout(300)
+    inside = True
+    for _ in range(28):
+        page.keyboard.press("Tab")
+        inside = inside and page.evaluate(
+            "() => !!document.activeElement && !!document.activeElement.closest('#wsDrawer')")
+    check["focus_trapped"] = inside
+
+    # The tablist answers to arrow keys, and each tab names the panel it opens.
+    page.click("#ws-tab-conversation")
+    page.wait_for_timeout(200)
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(300)
+    check["tab_arrow_keys"] = page.get_attribute("#ws-tab-agents", "aria-selected") == "true"
+    check["tab_controls_panel"] = page.locator("#ws-panel-agents").count() == 1
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
     check["focus_returns"] = page.evaluate(
         "() => document.activeElement && document.activeElement.id === 'workspaceRailBtn'"
     )

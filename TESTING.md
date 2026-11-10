@@ -263,8 +263,8 @@ a CSV and profiles and charts it, opens the chart at full size, schedules a
 task, saves and selects an assistant, flips a settings toggle and confirms the
 server agreed, sets a temperature and proves it arrives in the `/api/chat`
 request body, checks the connector catalogue, measures horizontal overflow at
-320/375/768/1024/1440/1920 px, and verifies Escape and focus return. 25 checks,
-0 console errors. It writes
+320/375/768/1024/1440/1920 px, and verifies Escape, the focus trap, the tab
+arrow keys and focus return. 28 checks, 0 console errors. It writes
 [`docs/workspace-verification.json`](docs/workspace-verification.json) and 16
 screenshots to `docs/img/workspace/`, and exits non-zero on any failure.
 
@@ -458,11 +458,12 @@ These are real fixes, not test edits to force green.
 | After Token Harbor / MiMo / MiniMax + editable chain | `6030 passed, 27 skipped, 2 deselected, 6 warnings` |
 | After history, projects, attachments, web and sandbox (30 new tests) | `6060 passed, 27 skipped, 2 deselected, 6 warnings in 313.05s` |
 | After MCP, connectors, agents, artifacts, media, jobs, privacy (130 new tests) | `6173 passed, 9 failed, 36 skipped, 2 deselected` — the nine were dictation tests with no X server; with `Xvfb :99` they pass |
-| After the workspace drawer, its browser regression and one assistant-model test | **`6192 passed, 27 skipped, 2 deselected, 6 warnings in 563.21s`** |
+| After the workspace drawer, its browser regression and one assistant-model test | `6192 passed, 27 skipped, 2 deselected, 6 warnings in 563.21s` |
+| After the connector SSRF guard and its test | **`6193 passed, 27 skipped, 2 deselected, 6 warnings in 695.32s`** |
 
 **Final full-suite result (current):** `DISPLAY=:99 python3.11 -m pytest -q`
 (against `Xvfb :99`) returned
-**`6192 passed, 27 skipped, 2 deselected, 6 warnings in 563.21s`** — **0 failures,
+**`6193 passed, 27 skipped, 2 deselected, 6 warnings in 695.32s`** — **0 failures,
 0 errors**. The single failure carried over from the previous audit
 (`test_wizard_layout.py::test_controls_fit_on_short_display[960-780-OpenAICompatiblePage]`)
 remains fixed in product code, not by loosening the assertion. No test was

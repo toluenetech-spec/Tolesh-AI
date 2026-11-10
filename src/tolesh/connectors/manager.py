@@ -10,7 +10,10 @@ Deliberate limits, all reported rather than hidden:
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
+import socket
 import time
 import uuid
 from typing import Any
@@ -41,12 +44,47 @@ def _check_path(path: str) -> str:
     return path
 
 
+def _allow_private() -> bool:
+    return os.environ.get("TOLESH_CONNECTORS_ALLOW_PRIVATE", "").strip().lower() in {
+        "1", "true", "yes"}
+
+
+def _assert_public_host(host: str) -> None:
+    """Refuse a host that is, or resolves to, something on this machine."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise ConnectorError(f"Could not resolve {host}.") from exc
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise ConnectorError(
+                f"{host} resolves to {ip}, which is a private or loopback "
+                "address. A connector sends its token to this host. Set "
+                "TOLESH_CONNECTORS_ALLOW_PRIVATE=1 to allow a server on your "
+                "own network.")
+
+
 def _check_base(base: str) -> str:
+    """Validate a base URL — and refuse one that points back at this machine.
+
+    A connector sends its token to whatever host it is given, so a base URL is
+    an exfiltration primitive if it can name an internal address. A self-hosted
+    server on your own network is a real use, so it is allowed when
+    ``TOLESH_CONNECTORS_ALLOW_PRIVATE=1`` is set deliberately.
+    """
     parsed = urlparse(base)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ConnectorError("A base URL must be an http(s) URL.")
     if parsed.username or parsed.password:
         raise ConnectorError("A base URL must not embed credentials.")
+    host = parsed.hostname or ""
+    if host and not _allow_private():
+        _assert_public_host(host)
     return base.rstrip("/")
 
 

@@ -135,8 +135,11 @@ unchanged.
   API never returns a token, and the export redacts connections entirely.
 * Refresh on expiry and on a 401/403; 429 is reported as a rate limit rather
   than a failure.
-* SSRF guards: `base_url` and request paths are checked, so a connection cannot
-  be pointed at `127.0.0.1` or a link-local address.
+* SSRF guards: a request path must be a plain API path (no scheme, no `..`), and
+  a custom `base_url` must resolve to a **public** address — loopback, private,
+  link-local and reserved ranges are refused, because the token is sent to
+  whatever host is named. A self-hosted server on your own network is a real
+  use, so `TOLESH_CONNECTORS_ALLOW_PRIVATE=1` opts in deliberately.
 * Write actions (`create_issue`, `post_message`, …) raise `ConnectorError(kind=
   "approval")` unless `approved=True`; the route parks them at the gate first.
 * ⛔ Webhooks and push subscriptions; Google service accounts; per-scope
@@ -274,6 +277,7 @@ unchanged.
 | Speech to text | `pip install faster-whisper` (or `TOLESH_WHISPER_MODEL`) | not installed |
 | Speech output | local Piper voice, or `TOLESH_TTS_API_BASE` + key | neither present |
 | Connectors | per-provider OAuth app or a personal access token | none connected |
+| Self-hosted connector server | `TOLESH_CONNECTORS_ALLOW_PRIVATE=1` | not set — a private `base_url` is refused by default |
 | Token Harbor paid tier | dashboard top-up | key present, `402 balance_zero` on paid ids |
 
 Every one of these is reported by `GET /api/media/capabilities` or by the
@@ -283,8 +287,8 @@ connector catalogue rather than assumed present.
 
 | Check | Result |
 |---|---|
-| Full test suite (`DISPLAY=:99`) | **6192 passed, 27 skipped, 2 deselected, 0 failed** in 563 s |
-| New tests this round | 131 across 10 files (MCP 25, connectors 23, agents 20, artifacts 15, media 18, jobs 15, privacy/extras 15) |
+| Full test suite (`DISPLAY=:99`) | **6193 passed, 27 skipped, 2 deselected, 0 failed** in 695 s |
+| New tests this round | 132 across 10 files (MCP 25, connectors 23, agents 20, artifacts 15, media 18, jobs 15, privacy/extras 15) |
 | Old-schema database migration | existing conversations preserved; every new column is additive |
 | MCP end-to-end | real stdio fixture (tools/resources/prompts, tool-level error), real streamable-HTTP fixture with an `Authorization` header |
 | Connectors end-to-end | fake GitHub: OAuth + PKCE, encrypted at rest, refresh on 401, SSRF refusal, write parked for approval |
@@ -293,7 +297,7 @@ connector catalogue rather than assumed present.
 | Media | fake provider for image and audio; explicit 503 with a reason when unconfigured |
 | Jobs | deterministic ticks, persistence across restart, notifications, progress separate from result |
 | Privacy | zip export contents, exact-phrase deletion, sharing off by default, edit/branch/regenerate |
-| Browser (Chromium, `scripts/verify_workspace_ui.py`) | **25/25 checks, 0 console errors**: 8 tabs, live MCP connect + tool list, live agent run, CSV upload → profile → chart, full-size chart viewer, task scheduling, assistant creation and selection, settings persistence, temperature carried on the wire, connector catalogue, no horizontal overflow at 320/375/768/1024/1440/1920 px, Escape and focus return |
+| Browser (Chromium, `scripts/verify_workspace_ui.py`) | **28/28 checks, 0 console errors**: 8 tabs, live MCP connect + tool list, live agent run, CSV upload → profile → chart, full-size chart viewer, task scheduling, assistant creation and selection, settings persistence, temperature carried on the wire, connector catalogue, no horizontal overflow at 320/375/768/1024/1440/1920 px, Escape, focus trap, tab arrow keys and focus return |
 
 Reproduce the browser run:
 

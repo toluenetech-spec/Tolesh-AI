@@ -26,6 +26,9 @@ def fake_provider(monkeypatch):
     base = f"http://127.0.0.1:{server.server_address[1]}"
     monkeypatch.setitem(PROVIDERS, "github",
                         replace(PROVIDERS["github"], token_url=f"{base}/token"))
+    # The fake lives on loopback; the private-address guard is deliberate, so
+    # the test opts in rather than the guard growing a hole for tests.
+    monkeypatch.setenv("TOLESH_CONNECTORS_ALLOW_PRIVATE", "1")
     TOKENS_ISSUED.clear()
     TOKENS_ISSUED.append("ghp_valid_token")
     yield base

@@ -91,6 +91,19 @@ restoration, listbox arrow-key navigation, `?view=` URL state, chip focus after
 re-render, streaming chat, mobile drawer collapsed by default, desktop and
 mobile screenshots, and zero `console.error` / `pageerror` events.
 
+**Workspace drawer** (`web/js/workspace.js`, checked by
+`scripts/verify_workspace_ui.py`):
+
+| Property | Implementation |
+|---|---|
+| Role | `role="dialog" aria-modal="true"`, `aria-labelledby` the heading, `aria-hidden` toggled with the open state |
+| Focus in / out | Focus moves to the close button on open and back to the rail button on close |
+| Focus trap | Tab and Shift+Tab wrap inside the drawer; 28 consecutive Tabs stay inside |
+| Escape | Closes the innermost layer first — the image viewer, then the drawer |
+| Tabs | `role="tablist"`, each tab `aria-selected` + `aria-controls`; panels answer to that id with `role="tabpanel"` and `aria-labelledby`; Arrow keys, Home and End move between tabs |
+| Motion | Drawer and scrim transitions are removed under `prefers-reduced-motion: reduce` |
+| Contrast | Uses the existing `--paper`/`--ink`/`--accent` tokens; not machine-measured (see below) |
+
 **Not yet verified (open work)**:
 
 - No automated axe-core / WCAG contrast audit has been run. Colour pairs are

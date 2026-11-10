@@ -102,6 +102,10 @@ def fake_provider(monkeypatch):
     # everything else (scopes, API paths, headers) exactly as shipped.
     monkeypatch.setitem(PROVIDERS, "github",
                         replace(PROVIDERS["github"], token_url=f"{base}/token"))
+    # The fake provider lives on loopback, and the manager refuses private base
+    # URLs on purpose. The test opts in explicitly rather than the guard
+    # growing a hole for tests.
+    monkeypatch.setenv("TOLESH_CONNECTORS_ALLOW_PRIVATE", "1")
     ISSUES.clear()
     TOKENS_ISSUED.clear()
     TOKENS_ISSUED.append("ghp_valid_token")
@@ -192,6 +196,26 @@ def test_paths_cannot_escape_the_provider_host(mgr, fake_provider):
     for path in ("https://evil.test/steal", "//evil.test/steal", "/../etc/passwd"):
         with pytest.raises(ConnectorError):
             mgr.call(conn["id"], "GET", path)
+
+
+def test_base_url_cannot_point_at_this_machine(tmp_path, monkeypatch):
+    """A base URL is where the token goes; loopback is refused by default."""
+    monkeypatch.delenv("TOLESH_CONNECTORS_ALLOW_PRIVATE", raising=False)
+    store = ConnectorStore(str(tmp_path / "connectors.db"),
+                           vault=TokenVault(tmp_path / "connector.key"))
+    manager = ConnectorManager(store)
+    try:
+        with pytest.raises(ConnectorError) as exc:
+            manager.add_token("github", "ghp_x", base_url="http://127.0.0.1:9",
+                              verify=False)
+        assert "private or loopback" in str(exc.value)
+        assert "TOLESH_CONNECTORS_ALLOW_PRIVATE" in str(exc.value)
+
+        with pytest.raises(ConnectorError):
+            manager.add_token("github", "ghp_x", base_url="http://10.0.0.5",
+                              verify=False)
+    finally:
+        manager.close()
 
 
 def test_base_url_must_be_http_and_carry_no_credentials(mgr):

@@ -115,6 +115,20 @@ export function initWorkspace() {
       id="ws-tab-${id}" aria-controls="ws-panel-${id}"
       aria-selected="${id === activeTab}">${label}</button>`);
     button.addEventListener('click', () => selectTab(id));
+    // The tablist pattern: arrows move between tabs, Home/End jump to the ends.
+    button.addEventListener('keydown', (event) => {
+      const order = TABS.map(([key]) => key);
+      const index = order.indexOf(id);
+      let next = null;
+      if (event.key === 'ArrowRight') next = order[(index + 1) % order.length];
+      if (event.key === 'ArrowLeft') next = order[(index - 1 + order.length) % order.length];
+      if (event.key === 'Home') next = order[0];
+      if (event.key === 'End') next = order[order.length - 1];
+      if (!next) return;
+      event.preventDefault();
+      selectTab(next);
+      tabButtons.get(next)?.focus();
+    });
     tabs.appendChild(button);
     tabButtons.set(id, button);
   }
@@ -126,7 +140,26 @@ export function initWorkspace() {
     // Escape closes the innermost layer first: the image viewer sits above the
     // drawer and handles its own Escape.
     if (document.querySelector('.ws-lightbox')) return;
-    if (event.key === 'Escape' && drawer.classList.contains('is-open')) closeWorkspace();
+    if (!drawer.classList.contains('is-open')) return;
+    if (event.key === 'Escape') {
+      closeWorkspace();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    // The drawer declares aria-modal, so focus must not wander behind it.
+    const focusable = [...drawer.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    )].filter((node) => !node.disabled && node.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
   window.addEventListener('tolesh:conversation', () => {
     if (activeTab === 'conversation' && drawer.classList.contains('is-open')) {
@@ -184,7 +217,11 @@ function selectTab(id) {
 }
 
 function panel(title, note) {
-  const wrap = h(`<section class="ws-panel" role="tabpanel">
+  // The tab declares aria-controls="ws-panel-<id>"; the panel has to answer to
+  // that id or the relationship is decorative.
+  const wrap = h(`<section class="ws-panel" role="tabpanel"
+    id="ws-panel-${activeTab}" aria-labelledby="ws-tab-${activeTab}"
+    tabindex="0">
     <h3>${esc(title)}</h3>
     ${note ? `<p class="ws-note">${esc(note)}</p>` : ''}
     <div class="ws-panel-body"></div>
