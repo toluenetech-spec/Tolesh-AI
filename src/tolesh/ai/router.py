@@ -74,6 +74,21 @@ class ModelRouter:
         chain = self.chain(task, preferred)
         return chain[0] if chain else None
 
+    def probe(self, messages: list[Message], *, model: str, max_tokens: int = 16,
+              temperature: float = 0.0) -> ProviderResult:
+        """Call exactly one model and let its error escape.
+
+        The connection test must attribute a failure to the model that failed.
+        ``complete()`` walks the fallback chain, so a queued model would be
+        silently answered by its neighbour and reported as success.
+        """
+        spec = self.registry.model(model)
+        if spec is None:
+            raise RouterError(f"Unknown model: {model}")
+        return self._provider_for(spec).chat(
+            messages, spec.id, temperature=temperature, max_tokens=max_tokens,
+        )
+
     # -------------------------------------------------------------- streaming
     def stream(self, messages: list[Message], *, task: str = "chat",
                model: str | None = None, temperature: float = 0.7,
@@ -126,10 +141,15 @@ class ModelRouter:
                     yield RouterEvent("status", {
                         "kind": "provider_error", "model": spec.id,
                         "message": str(exc), "retryable": exc.retryable,
+                        "status": exc.status, "retry_after": exc.retry_after,
                         "attempt": attempt,
                     }, spec.id)
                     if exc.retryable and attempt < max_attempts:
                         backoff = min(0.25 * (2 ** (attempt - 1)), 2.0)
+                        # Honour the endpoint's own Retry-After, but never stall
+                        # a live stream for long: the chain has other models.
+                        if exc.retry_after:
+                            backoff = min(max(backoff, exc.retry_after), 3.0)
                         yield RouterEvent("status", {
                             "kind": "retry", "model": spec.id,
                             "delay_ms": int(backoff * 1000), "attempt": attempt + 1,

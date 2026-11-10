@@ -26,12 +26,26 @@ CONFIG_PATH = Path(
 # suited to the job ("different models for different tasks"). Anything not
 # listed falls back to the registry default model.
 TASK_MODEL_ORDER: dict[str, tuple[str, ...]] = {
-    "chat": ("gonka:GLM-4.6", "openai:gpt-4o", "jev:jev-chat", "dahl:dahl-core"),
-    "reasoning": ("deepseek:deepseek-reasoner", "gonka:GLM-4.6", "dahl:dahl-core"),
-    "code": ("deepseek:deepseek-chat", "qwen2.5:7b", "openai:gpt-4o"),
-    "fast": ("offline:tolesh-offline", "dahl:dahl-fast", "groq:llama-3.3-70b-versatile", "openai:gpt-4o-mini"),
-    "voice_intent": ("offline:tolesh-offline", "dahl:dahl-fast", "openai:gpt-4o-mini"),
-    "classification": ("offline:tolesh-offline", "dahl:dahl-fast", "openai:gpt-4o-mini"),
+    # Same-provider alternates come directly after the preferred model: when a
+    # gateway queues one model (Dahl answers 429 model_concurrency), switching
+    # inside the provider is faster and more predictable than reaching for a
+    # different vendor.
+    "chat": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+             "dahl:MiniMaxAI/MiniMax-M2.7", "dahl:zai-org/GLM-5.3-Flash",
+             "gonka:GLM-4.6", "openai:gpt-4o", "jev:jev-chat"),
+    "reasoning": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+                  "dahl:MiniMaxAI/MiniMax-M2.7",
+                  "deepseek:deepseek-reasoner", "gonka:GLM-4.6"),
+    "code": ("dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+             "dahl:MiniMaxAI/MiniMax-M2.7",
+             "deepseek:deepseek-chat", "openai:gpt-4o"),
+    "fast": ("dahl:MiniMaxAI/MiniMax-M2.7", "dahl:zai-org/GLM-5.3-Flash",
+             "offline:tolesh-offline", "groq:llama-3.3-70b-versatile",
+             "openai:gpt-4o-mini"),
+    "voice_intent": ("offline:tolesh-offline", "dahl:MiniMaxAI/MiniMax-M2.7",
+                     "openai:gpt-4o-mini"),
+    "classification": ("offline:tolesh-offline", "dahl:MiniMaxAI/MiniMax-M2.7",
+                       "openai:gpt-4o-mini"),
     "vision": ("openai:gpt-4o", "openrouter:openrouter/auto"),
 }
 
@@ -114,6 +128,31 @@ def _m(provider: str, model: str, label: str, **kw: Any) -> ModelSpec:
     return ModelSpec(id=f"{provider}:{model}", provider=provider, model=model, label=label, **kw)
 
 
+def _label_for(wire_id: str) -> str:
+    """Readable label from a wire model id ("vendor/Model-Name" -> "Model-Name")."""
+    return wire_id.rsplit("/", 1)[-1] or wire_id
+
+
+def _models_from_ids(provider: str, ids: Any) -> tuple[ModelSpec, ...]:
+    """Build ModelSpecs from the plain id list a discovery call returned.
+
+    Used when the user pulls the live model list of an arbitrary
+    OpenAI-compatible endpoint from the settings UI. Only the ids are trusted;
+    capabilities are left at conservative defaults instead of being invented.
+    """
+    if not isinstance(ids, (list, tuple)):
+        return ()
+    out: list[ModelSpec] = []
+    seen: set[str] = set()
+    for raw in ids:
+        wire = str(raw or "").strip()
+        if not wire or wire in seen or len(wire) > 200:
+            continue
+        seen.add(wire)
+        out.append(_m(provider, wire, _label_for(wire), cost_tier="cheap"))
+    return tuple(out)
+
+
 def _catalog() -> dict[str, ProviderSpec]:
     """Built-in declaration of planned and compatible providers."""
 
@@ -171,14 +210,26 @@ def _catalog() -> dict[str, ProviderSpec]:
         notes="Gonka-hosted GLM / DeepSeek / MiniMax models.",
     )
 
+    # Dahl is the provider this build is actually wired against. The model ids
+    # below were read from ``GET https://inference.dahl.global/v1/models`` with
+    # a real key — they are not guesses. The gateway is OpenAI-compatible, and
+    # the free tier is queued behind paid traffic: a busy model answers
+    # ``429 {"error":{"code":"model_concurrency", ...}}`` and names the models
+    # that are free right now, which is why several are declared here.
     dahl = keyed(
         "dahl", "Dahl",
-        os.environ.get("TOLESH_DAHL_BASE_URL", "https://api.dahl.ai/v1"),
+        os.environ.get("TOLESH_DAHL_BASE_URL", "https://inference.dahl.global/v1"),
         (
-            _m("dahl", "dahl-core", "Dahl Core", tasks=("chat", "reasoning"), cost_tier="standard"),
-            _m("dahl", "dahl-fast", "Dahl Fast", tasks=("fast", "voice_intent", "classification"), cost_tier="cheap"),
+            _m("dahl", "deepseek-ai/DeepSeek-V4-Flash-0731", "DeepSeek V4 Flash",
+               tasks=("chat", "code", "reasoning"), cost_tier="cheap", context=131072),
+            _m("dahl", "MiniMaxAI/MiniMax-M2.7", "MiniMax M2.7",
+               tasks=("chat", "code", "fast"), cost_tier="cheap"),
+            _m("dahl", "zai-org/GLM-5.3-Flash", "GLM-5.3 Flash",
+               tasks=("chat", "fast", "classification"), cost_tier="cheap"),
         ),
-        notes="Dahl and comparable model providers.",
+        notes=("Dahl inference gateway (OpenAI-compatible). Free tier queues behind "
+               "paid accounts, so a busy model returns 429 model_concurrency — "
+               "switch model or retry. Configure TOLESH_DAHL_API_KEY."),
     )
 
     openai = keyed(
@@ -239,6 +290,11 @@ class Registry:
                                if k in patch}
                     if "api_key" in patch:
                         allowed["api_key"] = str(patch["api_key"])
+                    if patch.get("models"):
+                        # Live model ids the user pulled from the endpoint.
+                        discovered = _models_from_ids(name, patch["models"])
+                        if discovered:
+                            allowed["models"] = discovered
                     providers[name] = replace(cur, **allowed)
                 default_model = str(raw.get("default_model") or "").strip()
         except Exception:
@@ -266,6 +322,12 @@ class Registry:
                    if k in patch and patch[k] is not None}
         if "api_key" in patch and patch["api_key"] is not None:
             allowed["api_key"] = str(patch["api_key"])
+        models_replaced = False
+        if patch.get("models"):
+            discovered = _models_from_ids(name, patch["models"])
+            if discovered:
+                allowed["models"] = discovered
+                models_replaced = True
         if "base_url" in allowed:
             base = str(allowed["base_url"]).strip()
             if base and not base.startswith(("http://", "https://")):
@@ -273,10 +335,22 @@ class Registry:
             allowed["base_url"] = base
         new = replace(cur, **allowed)
         self.providers[name] = new
+        if models_replaced:
+            # A refreshed model list replaces the old one; leaving stale ids in
+            # the index would keep offering models the endpoint no longer serves.
+            live = {m.id for m in new.models}
+            for mid in [mid for mid, spec in self._models.items()
+                        if spec.provider == name and mid not in live]:
+                self._models.pop(mid, None)
+            if self.default_model and self.model(self.default_model) is None:
+                self.default_model = ""
         for m in new.models:
             self._models[m.id] = m
         if persist:
-            self.persist_provider(name, allowed)
+            to_persist: dict[str, Any] = dict(allowed)
+            if "models" in to_persist:
+                to_persist["models"] = [m.model for m in to_persist["models"]]
+            self.persist_provider(name, to_persist)
         return new
 
     def persist_provider(self, name: str, patch: dict[str, Any]) -> None:

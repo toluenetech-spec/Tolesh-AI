@@ -355,11 +355,13 @@ export function memoryDialog({ onSubmit }) {
   root.querySelector('#memContent').focus();
 }
 
-/** Provider configuration dialog: endpoint, key, enabled state, and a real
- *  connection test. The backend never echoes a stored key, so an empty key
- *  field means "keep the secret that is already saved". */
-export function providerDialog(provider, { onSave, onTest } = {}) {
+/** Provider configuration dialog: endpoint, key, enabled state, the model list
+ *  the endpoint actually serves, and a real connection test. The backend never
+ *  echoes a stored key, so an empty key field means "keep the secret that is
+ *  already saved". */
+export function providerDialog(provider, { onSave, onTest, onDiscover } = {}) {
   const hasKey = provider.api_key === '***' || provider.configured;
+  const declared = provider.models || [];
   const { root, close } = mountDialog(`
     <div class="modal-backdrop">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -375,6 +377,12 @@ export function providerDialog(provider, { onSave, onTest } = {}) {
           <input id="provEnabled" name="enabled" type="checkbox" ${provider.enabled ? 'checked' : ''} />
           <span>Enabled</span>
         </label>
+        <label id="provModelsLabel">Models</label>
+        <div class="model-pull">
+          <button class="btn" type="button" data-load-models>Load model list from endpoint</button>
+          <p class="modal-note" id="provModelsNote" role="status" aria-live="polite">${declared.length ? `${declared.length} declared model${declared.length === 1 ? '' : 's'} in use.` : 'No models declared yet.'}</p>
+        </div>
+        <div class="model-pull-list" id="provModels" hidden></div>
         <p class="modal-note" id="provTestResult" role="status" aria-live="polite"></p>
         <div class="modal-actions">
           <button class="btn" data-cancel>Cancel</button>
@@ -385,6 +393,13 @@ export function providerDialog(provider, { onSave, onTest } = {}) {
     </div>`);
 
   const result = root.querySelector('#provTestResult');
+  const modelsNote = root.querySelector('#provModelsNote');
+  const modelsBox = root.querySelector('#provModels');
+  const pullBtn = root.querySelector('[data-load-models]');
+  let pulled = null;   // ids returned by the endpoint, or null when not loaded
+
+  const checkedModels = () => [...modelsBox.querySelectorAll('input:checked')].map((i) => i.value);
+
   const patchFrom = () => {
     const patch = {
       base_url: root.querySelector('#provBaseUrl').value.trim(),
@@ -392,7 +407,21 @@ export function providerDialog(provider, { onSave, onTest } = {}) {
     };
     const key = root.querySelector('#provApiKey').value;
     if (key) patch.api_key = key;
+    if (pulled) {
+      const chosen = checkedModels();
+      if (chosen.length) patch.models = chosen;
+    }
     return patch;
+  };
+
+  const showModels = (ids) => {
+    pulled = ids;
+    modelsBox.hidden = false;
+    modelsBox.innerHTML = ids.map((id) => `
+      <label class="inline-check">
+        <input type="checkbox" value="${esc(id)}" checked />
+        <span translate="no">${esc(id)}</span>
+      </label>`).join('');
   };
 
   root.querySelector('[data-cancel]').addEventListener('click', close);
@@ -400,6 +429,30 @@ export function providerDialog(provider, { onSave, onTest } = {}) {
     const patch = patchFrom();
     close();
     if (typeof onSave === 'function') onSave(patch);
+  });
+  pullBtn.addEventListener('click', async () => {
+    if (typeof onDiscover !== 'function') return;
+    pullBtn.disabled = true;
+    modelsNote.classList.remove('is-bad');
+    modelsNote.textContent = 'Saving the key, then asking the endpoint…';
+    try {
+      // Save first: the discovery call must use the stored key, not form state
+      // the backend has never seen.
+      const r = await onDiscover(patchFrom());
+      if (r && r.ok && Array.isArray(r.models) && r.models.length) {
+        showModels(r.models);
+        const ms = r.latency_ms != null ? ` in ${r.latency_ms} ms` : '';
+        modelsNote.textContent = `The endpoint reported ${r.models.length} model${r.models.length === 1 ? '' : 's'}${ms}. Untick anything you do not want in the picker, then Save.`;
+      } else {
+        modelsNote.textContent = `${(r && r.status) || 'failed'}: ${(r && r.detail) || 'no models returned'}`;
+        modelsNote.classList.add('is-bad');
+      }
+    } catch (err) {
+      modelsNote.textContent = err.message;
+      modelsNote.classList.add('is-bad');
+    } finally {
+      pullBtn.disabled = false;
+    }
   });
   root.querySelector('[data-test]').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
@@ -411,7 +464,8 @@ export function providerDialog(provider, { onSave, onTest } = {}) {
       if (r.ok) {
         result.textContent = `Connected — ${r.model} replied “${String(r.reply || '').slice(0, 40)}”.`;
       } else {
-        result.textContent = `${r.status}: ${r.detail || 'no answer'}`;
+        const tried = (r.attempts || []).length;
+        result.textContent = `${r.status}: ${r.detail || 'no answer'}${tried ? ` (${tried} model${tried === 1 ? '' : 's'} tried)` : ''}`;
         result.classList.add('is-bad');
       }
     } catch (err) {

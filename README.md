@@ -84,12 +84,34 @@ server wrote them.
 The app runs with **zero API keys**. In that state the router uses the
 deterministic `offline:tolesh-offline` engine, which is a rule-based,
 culturally-aware conversation surface — it is explicitly **not a language
-model** and never pretends to be one. Add a key to enable a real provider:
+model** and never pretends to be one. Add a key to enable a real provider.
+
+### Connecting Dahl (the provider this build is wired against)
+
+Dahl's gateway is OpenAI-compatible, so it is a registry entry, not new code:
 
 ```bash
-export TOLESH_PROVIDER_<NAME>_KEY=...     # see docs/CONFIGURATION.md
-# or edit ~/.config/tolesh/providers.json (TOLESH_PROVIDERS_PATH)
+export TOLESH_DAHL_API_KEY=dahl_...
+export TOLESH_DAHL_BASE_URL=https://inference.dahl.global/v1   # already the default
 ```
+
+Or use the app: **Settings → Dahl → paste the key → Save**, then
+**Load model list from endpoint**. That button performs one real
+`GET /v1/models` with the stored key and lists exactly what the gateway serves;
+ticked ids become the picker's catalogue and are written to
+`~/.config/tolesh/providers.json` (mode `0600`, outside the repository).
+The key is never echoed back — every endpoint returns `"api_key": "***"`.
+
+The gateway's free tier is queued behind paid traffic, so a busy model answers
+`429 {"error":{"code":"model_concurrency", ...}}` and names the models that are
+free at that moment. Tolesh handles this honestly rather than hiding it:
+
+* the failing model is named in the stream (`provider_error` with `status: 429`
+  and the endpoint's own `Retry-After`),
+* the router then tries the other Dahl models before any other vendor,
+* if the answer came from a different model, the bubble says so
+  (`MiniMax M2.7 · fallback`),
+* a connection test reports per-model results instead of one pass/fail.
 
 Optional hardening: `TOLESH_API_TOKEN` gates every `/api` route except
 `/api/health`; `TOLESH_ALLOWED_ORIGINS` extends the explicit CORS allow-list.
@@ -128,10 +150,11 @@ missing TODO.
 
 ### Shared HTTP/SSE backend
 `src/tolesh/server/app.py` exposes `/api/health`, `/api/config`,
-`/api/providers`, `/api/models`, `/api/chat` (SSE), `/api/chat/sync`,
-conversations, memory, usage, permissions, tools, and serves the static `web/`
-client. The same JSON/SSE contract is intended for a future Cloudflare Pages
-client and a future Android client.
+`/api/providers`, `/api/providers/{name}/models` (live model discovery),
+`/api/models`, `/api/chat` (SSE), `/api/chat/sync`, conversations, memory, usage,
+permissions, tools, and serves the static `web/` client. The same JSON/SSE
+contract is intended for a future Cloudflare Pages client and a future Android
+client.
 
 ### Voice
 - **Browser** (`web/js/voice.js`): real Web Speech API STT/TTS, continuous

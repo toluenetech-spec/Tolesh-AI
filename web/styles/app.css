@@ -426,6 +426,29 @@ ol, ul { padding: 0; list-style: none; }
 .inline-check { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); color: var(--ivory-dim); cursor: pointer; }
 .inline-check input { accent-color: var(--brass); }
 
+/* Pulling the live model list from an OpenAI-compatible endpoint. */
+.model-pull { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.model-pull .btn { flex: 0 0 auto; }
+.model-pull .modal-note { flex: 1 1 180px; }
+.model-pull-list {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: var(--s-2); padding: 10px;
+  max-height: 132px; overflow-y: auto;
+  border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+  background: var(--ink-900);
+}
+/* ``.modal label`` is a block with big margins; inside these lists the label is
+   the row itself, so restore the inline layout at higher specificity. */
+.modal .model-pull-list .inline-check,
+.modal .inline-check {
+  display: flex; align-items: center; gap: var(--s-2);
+  margin: 0; letter-spacing: 0; font-size: var(--fs-sm);
+}
+.modal .model-pull-list .inline-check { align-items: flex-start; font-size: var(--fs-xs); }
+.modal .model-pull-list .inline-check input { margin-top: 2px; flex: 0 0 auto; }
+.modal .model-pull-list .inline-check span { word-break: break-all; }
+.modal .inline-check input { width: auto; }
+
 .usage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
 .usage-cell { padding: var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: oklch(0.175 0.008 62); }
 .usage-cell .n { display: block; font-family: var(--font-display); font-size: var(--fs-lg); color: var(--brass); font-variant-numeric: tabular-nums; }
@@ -467,6 +490,7 @@ ol, ul { padding: 0; list-style: none; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .modal {
   width: min(460px, 100%); padding: var(--s-8);
+  max-height: min(88vh, 760px); overflow-y: auto;
   border: 1px solid var(--line-strong); border-radius: var(--r-lg);
   background: oklch(0.205 0.010 62); box-shadow: var(--shadow-lg);
   animation: modal-in var(--dur) var(--ease-out) both;

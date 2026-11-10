@@ -62,9 +62,23 @@ def build_system_prompt(memory_context: str = "", *, task: str = "chat",
     parts = [TOLESH_PERSONA.strip(), "", "## Current task",
              _TASK_HINTS.get(task, _TASK_HINTS["chat"])]
     if model_label:
-        parts += ["", f"## Active model\n{model_label} (routed by Tolesh; may fall back automatically)"]
+        # The router can fall back to another model mid-turn, so the model is
+        # never told which one it is: naming it produced replies that claimed an
+        # identity the request had already been rerouted away from.
+        parts += ["", "## Active model",
+                  "Tolesh routes this turn across several models, with automatic "
+                  "fallback. You do not know which model is answering.",
+                  "Never claim to be a specific model or vendor. If asked, say that "
+                  "Tolesh routes across several models."]
     if memory_context.strip():
         parts += ["", "## What you know about this user (transparent memory)",
                   memory_context.strip(),
                   "Only use the above if relevant. Never imply you know more than this."]
+    else:
+        # Saying nothing here let the model invent a remembered name and city.
+        # The empty store is a fact, so state it as one.
+        parts += ["", "## What you know about this user (transparent memory)",
+                  "Nothing is stored. You have no saved memory about this user.",
+                  "If asked what you remember, say plainly that nothing is stored yet and "
+                  "that the only context you have is this conversation."]
     return "\n".join(parts)

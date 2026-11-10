@@ -10,6 +10,7 @@ runtime from ``TOLESH_<PROVIDER>_API_KEY`` environment variables or from a
 per-user ``~/.config/tolesh/providers.json`` outside the source tree.
 """
 
+from .discovery import discover_models
 from .registry import Registry, ProviderSpec, ModelSpec, TASK_MODEL_ORDER
 from .router import ModelRouter, RouterError, RouterEvent
 from .usage import UsageLedger
@@ -23,4 +24,5 @@ __all__ = [
     "RouterError",
     "RouterEvent",
     "UsageLedger",
+    "discover_models",
 ]

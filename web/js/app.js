@@ -24,6 +24,7 @@ const state = {
   pending: [],
   streaming: false,
   abort: null,
+  health: null,            // last /api/health payload, reused for re-renders
 };
 
 const SUGGESTIONS = [
@@ -232,6 +233,13 @@ async function saveProvider(name, patch) {
   const r = await api.patch(`/api/providers/${name}`, patch);
   const idx = state.providers.findIndex((p) => p.name === name);
   if (idx >= 0 && r.provider) state.providers[idx] = r.provider;
+  if (patch.models) {
+    // The catalogue changed, so the model picker is stale until reloaded.
+    try {
+      state.models = (await api.get('/api/models')).models;
+      if (state.health) renderAll(state.health);
+    } catch (_) { /* keep the previous list rather than blanking the picker */ }
+  }
   ui.renderProviders($('providerList'), state.providers, { onConfigure: openProviderDialog });
   $('providerCount').textContent = String(state.providers.filter((p) => p.configured).length);
   return r;
@@ -252,6 +260,11 @@ function openProviderDialog(provider) {
       // make one real request. This cannot "pass" against unsaved form state.
       await saveProvider(provider.name, patch);
       return api.post(`/api/providers/${provider.name}/test`, {});
+    },
+    onDiscover: async (patch) => {
+      // Same rule for discovery: the endpoint is queried with the saved key.
+      await saveProvider(provider.name, patch);
+      return api.get(`/api/providers/${provider.name}/models`);
     },
   });
 }
@@ -281,6 +294,8 @@ async function send(text) {
 
   let buffer = '';
   let usedModel = null;
+  state.fellBack = false;
+  state.lastProviderError = null;
   const controller = new AbortController();
   state.abort = controller;
 
@@ -300,7 +315,16 @@ async function send(text) {
       case 'status': {
         const d = ev.data || {};
         if (d.kind === 'select') setStatus(`Routing to ${modelLabel(d.model)}…`);
-        else if (d.kind === 'provider_error') setStatus(`Provider failed: ${String(d.message).slice(0, 90)}`);
+        else if (d.kind === 'provider_error') {
+          const msg = String(d.message || 'unknown error');
+          // A queued model (Dahl answers 429 model_concurrency on the free tier)
+          // is not a broken key: say so instead of showing a scary failure.
+          const busy = d.status === 429 || /concurrency|capacity|rate.?limit/i.test(msg);
+          state.lastProviderError = msg;
+          setStatus(busy
+            ? `${modelLabel(d.model)} is at capacity — trying the next model…`
+            : `Provider failed: ${msg.slice(0, 90)}`);
+        }
         else if (d.kind === 'retry') setStatus(`Retrying in ${d.delay_ms}ms…`);
         else if (d.kind === 'fallback') setStatus(`Falling back to ${modelLabel(d.to)}…`);
         break;
@@ -321,12 +345,17 @@ async function send(text) {
         break;
       case 'done':
         usedModel = ev.data?.model || null;
+        state.fellBack = (ev.data?.fallbacks_used || 0) > 0;
         setStatus('');
         break;
-      case 'error':
-        setStatus('Something went wrong.');
-        ui.toast(ev.data?.message || 'The model chain failed.', 'error');
+      case 'error': {
+        setStatus('Every model in the chain failed.');
+        const detail = state.lastProviderError
+          ? `${ev.data?.message || 'The model chain failed.'} ${state.lastProviderError}`
+          : (ev.data?.message || 'The model chain failed.');
+        ui.toast(detail, 'error');
         break;
+      }
       default:
         break;
     }
@@ -345,7 +374,9 @@ async function send(text) {
       botEl.classList.add('is-error');
     }
   } finally {
-    ui.finishMessage(botEl, usedModel ? modelLabel(usedModel) : '');
+    ui.finishMessage(botEl, usedModel
+      ? `${modelLabel(usedModel)}${state.fellBack ? ' · fallback' : ''}`
+      : '');
     state.streaming = false;
     state.abort = null;
     $('sendBtn').disabled = false;

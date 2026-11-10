@@ -395,5 +395,17 @@ def test_persona_prompt_is_transparent_and_culturally_nigerian():
     assert "My name is Ayo" in prompt
     assert "Never imply you know more than this." in prompt
     assert "Give correct, runnable code" in prompt
-    assert "Tolesh Offline (local)" in prompt
     assert "offline engine" in prompt.lower()
+    # The router can fall back mid-turn, so the prompt must not hand the model a
+    # specific identity: naming it produced replies claiming to be DeepSeek while
+    # MiniMax answered. Routing is stated as opaque instead.
+    assert "Tolesh Offline (local)" not in prompt
+    assert "You do not know which model is answering" in prompt
+    assert "Never claim to be a specific model" in prompt
+
+
+def test_persona_prompt_states_an_empty_memory_store_plainly():
+    """Silence about memory let the model invent a remembered name and city."""
+    prompt = build_system_prompt("", task="chat", model_label="x")
+    assert "Nothing is stored." in prompt
+    assert "no saved memory" in prompt

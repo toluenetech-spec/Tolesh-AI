@@ -109,13 +109,15 @@ def main() -> int:
         page.keyboard.press("Escape")
         report["checks"]["dialog_escape_closes"] = page.locator(".modal").count() == 0
 
-        # streaming chat over the real SSE endpoint
+        # streaming chat over the real SSE endpoint. 60 s, not 30: a busy
+        # gateway can queue the preferred model, retry, then answer from a
+        # sibling model — the check still requires a genuine streamed reply.
         page.locator("#input").fill("How far?")
         page.locator("#sendBtn").click()
         page.wait_for_function(
             "() => { const n = document.querySelectorAll('.message.is-assistant .message-body'); "
             "return [...n].some(e => e.textContent.trim().length > 20); }",
-            timeout=30000,
+            timeout=60000,
         )
         report["checks"]["streamed_reply"] = page.locator(
             ".message.is-assistant .message-body").last.inner_text()[:160]

@@ -60,6 +60,9 @@ class ProviderPatch(BaseModel):
     timeout: float | None = Field(default=None, ge=1, le=600)
     max_retries: int | None = Field(default=None, ge=0, le=10)
     notes: str | None = Field(default=None, max_length=1000)
+    # Wire model ids pulled from the endpoint's own /models listing. Sending a
+    # list replaces the provider's catalogue with exactly those ids.
+    models: list[str] | None = Field(default=None, max_length=200)
 
 
 class ConfigPatch(BaseModel):

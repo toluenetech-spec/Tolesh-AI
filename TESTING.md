@@ -146,7 +146,39 @@ Drives real Chromium against the running server. Collects `console.error` and
 keyboard / closed by Escape, dialog opened / focus trapped / closed by Escape,
 a real streamed reply, `?view=` URL state surviving reload, mobile drawer
 collapsed by default, and reduced-motion behaviour. Any collected error fails
-the run.
+the run. The streamed-reply wait is 60 s because a busy gateway can queue the
+preferred model, retry, and answer from a sibling model; the check still
+requires a genuine streamed reply, never a cached one.
+
+### `tests/test_tolesh_dahl_provider.py` — 16 tests
+
+Offline contract tests for the Dahl wiring and the discovery path. The endpoint
+is stubbed with the response shape the live gateway was observed to return.
+
+| Test | What it actually proves |
+| --- | --- |
+| `test_dahl_catalog_points_at_the_real_gateway` | Base URL and the three real model ids; the old placeholder ids are gone |
+| `test_chat_chain_tries_the_other_dahl_models_before_other_vendors` | A queued model falls to its sibling, not to another vendor |
+| `test_discovery_reports_the_ids_the_endpoint_lists` | `/models` ids are returned in order |
+| `test_discovery_reports_an_http_error_instead_of_an_empty_success` | `429` → `http_429` with the upstream message, not `[]` |
+| `test_discovery_reports_transport_failure` | Refused connection → `error` with the reason |
+| `test_discovery_refuses_an_endpoint_that_lists_nothing` | Empty listing is `no_models`, not success |
+| `test_patching_models_replaces_the_catalogue_and_drops_stale_ids` | New catalogue applied, stale ids removed, persisted at `0600`, reloaded by a fresh registry |
+| `test_unknown_model_in_patch_is_ignored_rather_than_invented` | An empty list never wipes the catalogue |
+| `test_probe_attributes_failure_to_the_model_that_failed` | `probe()` raises instead of walking the fallback chain; `retry_after` survives |
+| `test_think_filter_strips_reasoning_per_character` (×5) | Inline reasoning removed across chunk boundaries, unterminated block dropped, literal `<` kept |
+| `test_strip_think_is_the_whole_message_variant` | Non-streaming path behaves the same |
+| `test_lazy_app_is_asgi3_not_asgi2` | Regression for the uvicorn launch failure |
+
+### `scripts/verify_dahl.py` and `scripts/capture_*.py`
+
+`verify_dahl.py` talks to a running backend and asserts the real chain: key
+configured and redacted, `/models` listing, per-model connection test, a
+streamed answer with real token usage, and the message stored in the
+conversation it claims. Writes `docs/dahl-report.json`; exits non-zero unless a
+real answer arrived.
+`capture_web_conversation.py` and `capture_provider_models.py` drive Chromium to
+produce the screenshots in `docs/img/` from live responses.
 
 ## 6. Browser verification result
 
@@ -287,6 +319,34 @@ These are real fixes, not test edits to force green.
     Fixed by bounding the connection-status label to three lines (full text
     kept in a tooltip) and tightening this page's row spacing from 14 px to
     12 px. The assertion was **not** loosened.
+13. **`uvicorn tolesh.server.app:app` failed on every request** —
+    `_LazyApp.__call__` was a plain `def`, so uvicorn classified the app as
+    ASGI2 and called it with the scope only:
+    `TypeError: _LazyApp.__call__() missing 2 required positional arguments`.
+    Found by actually launching uvicorn (the desktop path calls `create_app()`
+    directly and never hit it). Fixed by making `__call__` `async`; regression
+    test `test_lazy_app_is_asgi3_not_asgi2`.
+14. **A streaming 429 was reported as a transport error** — `_raise_for_status`
+    touched `response.text` on an httpx *streaming* response, which raises
+    "Attempted to access streaming response content, without having called
+    `read()`". The gateway's real message (`429 model_concurrency`, with the
+    models that are free right now) was replaced by that string, so the UI could
+    not tell a busy model from a broken key. Fixed by reading the body first and
+    parsing the JSON error; the `status` and `Retry-After` now reach the client.
+15. **Reasoning blocks leaked into replies and into the database** — MiniMax and
+    the DeepSeek reasoners on Dahl inline their chain of thought in `content`.
+    It was rendered in the bubble and stored as the assistant turn, corrupting
+    later context. Fixed at the adapter boundary with a chunk-safe
+    `ThinkFilter` (5 parametrised cases, including unterminated blocks and
+    literal `<`).
+16. **The assistant claimed a model it was not running on, and invented
+    memories** — the prompt named the selected model, so after a fallback the
+    reply said "DeepSeek V4 Flash is doing the talking" while MiniMax answered;
+    and with an empty memory store it produced "your name, your location" out of
+    nothing. Fixed in `persona/prompt.py`: routing is stated as opaque, the model
+    is forbidden from claiming an identity, and an empty store is stated as a
+    fact. Verified live: the reply became "Tolesh routes across several models —
+    I don't know exactly which one".
 
 ## 8. Test history (chronological, verbatim results)
 
@@ -298,13 +358,28 @@ These are real fixes, not test edits to force green.
 | After native deps (`libportaudio2`, `faiss-cpu`, `faster-whisper`, `pynput`) | `18 failed, 5918 passed, 36 skipped, 2 deselected, 3 warnings in 298.86s` |
 | After fixes 1–8 above | `1 failed, 5944 passed, 27 skipped, 2 deselected, 3 warnings in 300.68s` |
 | After unified desktop integration + fixes 9–12 | `5961 passed, 27 skipped, 2 deselected, 5 warnings in 280.86s` |
+| After Dahl provider + web interface work (fixes 13–16) | `5978 passed, 27 skipped, 2 deselected, 5 warnings in 279.92s` |
 
-**Final full-suite result (current):** `xvfb-run -a python3.11 -m pytest tests -q`
-returned **`5961 passed, 27 skipped, 2 deselected, 5 warnings in 280.86s`** —
-**0 failures, 0 errors**. The single failure carried over from the previous
-audit (`test_wizard_layout.py::test_controls_fit_on_short_display[960-780-OpenAICompatiblePage]`)
-is now fixed in product code, not by loosening the assertion. No test was
+**Final full-suite result (current):** `DISPLAY=:99 python3.11 -m pytest -q`
+(against `Xvfb :99`) returned
+**`5978 passed, 27 skipped, 2 deselected, 5 warnings in 279.92s`** — **0 failures,
+0 errors**. The single failure carried over from the previous audit
+(`test_wizard_layout.py::test_controls_fit_on_short_display[960-780-OpenAICompatiblePage]`)
+remains fixed in product code, not by loosening the assertion. No test was
 deleted, skipped or weakened to reach this result.
+
+One earlier run in this stage reported `10 failed, 5958 passed` — nine
+`tests/test_dictation.py` cases and one persona assertion. Both causes were
+identified rather than waved away:
+
+* the dictation failures were `RuntimeError("pynput is not installed")` raised
+  because no X server was running (`DISPLAY=:0` pointed at nothing). With
+  `Xvfb :99` those 80 tests pass; nothing in the code changed for them.
+* `test_persona_prompt_is_transparent_and_culturally_nigerian` failed because the
+  prompt no longer names the active model. The assertion was **replaced by a
+  stricter one** (the label must be absent, and the prompt must state that
+  routing is opaque), not deleted — the old behaviour caused replies to claim an
+  identity the router had already fallen back from.
 
 The inherited suite is large and slow (~5 minutes). Every run above was
 executed under `xvfb-run -a` once the X requirement was understood; earlier

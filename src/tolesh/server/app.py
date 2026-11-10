@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..ai import ModelRouter, Registry, UsageLedger
+from ..ai import ModelRouter, Registry, UsageLedger, discover_models
 from ..conversation import ConversationManager
 from ..memory_ext import LayeredMemory
 from ..permissions import PermissionGate
@@ -190,13 +190,34 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"provider": spec.as_dict(redact=True)}
 
+    @app.get("/api/providers/{name}/models")
+    def provider_models(name: str) -> dict[str, Any]:
+        """List what the endpoint really serves, plus what we have declared.
+
+        ``models`` is the result of one ``GET {base_url}/models`` with the stored
+        key (empty when the call failed, with ``detail`` explaining why).
+        ``declared`` is the registry catalogue, so the UI can show a difference
+        instead of pretending the two always agree.
+        """
+        spec = st.registry.provider(name)
+        if spec is None:
+            raise HTTPException(status_code=404, detail=f"Unknown provider: {name}")
+        declared = [m.as_dict() for m in spec.models]
+        if not spec.configured:
+            return {"ok": False, "status": "unconfigured", "live": [], "declared": declared,
+                    "detail": f"{spec.label} has no base URL or API key yet."}
+        live = discover_models(spec)
+        return {**live, "declared": declared, "provider": name}
+
     @app.post("/api/providers/{name}/test")
     def test_provider(name: str) -> dict[str, Any]:
-        """Make one tiny real request and report what actually answered.
+        """Make real requests and report what actually answered.
 
-        This is deliberately honest: the router falls back to the offline
-        engine, so a completion whose model id belongs to a *different*
-        provider is reported as ``fallback`` rather than as success.
+        Every declared model is tried in order, because a gateway can refuse one
+        model while serving another (Dahl returns ``429 model_concurrency`` for a
+        busy model and names the free ones). The first genuine answer wins; a
+        reply produced by the offline fallback is reported as ``fallback``, never
+        as success for this provider.
         """
         spec = st.registry.provider(name)
         if spec is None:
@@ -207,21 +228,26 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
         if not spec.models:
             return {"ok": False, "status": "no_models",
                     "detail": f"{spec.label} declares no models."}
-        model = spec.models[0]
-        try:
-            result = st.router.complete(
-                [{"role": "user", "content": "Reply with the single word: ready"}],
-                task="fast", model=model.id, max_tokens=16, temperature=0.0,
-            )
-        except Exception as exc:
-            return {"ok": False, "status": "error", "detail": str(exc)[:400]}
-        if not str(result.model_id or "").startswith(f"{name}:"):
-            return {"ok": False, "status": "fallback",
-                    "detail": f"{spec.label} did not answer; the chain fell back to "
-                              f"{result.model_id}.",
-                    "model": result.model_id}
-        return {"ok": True, "status": "ok", "model": result.model_id,
-                "reply": result.text[:200], "usage": result.usage.as_dict()}
+
+        attempts: list[dict[str, Any]] = []
+        for model in spec.models[:4]:
+            try:
+                result = st.router.probe(
+                    [{"role": "user", "content": "Reply with the single word: ready"}],
+                    model=model.id, max_tokens=16, temperature=0.0,
+                )
+            except Exception as exc:
+                attempts.append({"model": model.id, "ok": False,
+                                 "status": getattr(exc, "status", None),
+                                 "detail": str(exc)[:300]})
+                continue
+            return {"ok": True, "status": "ok", "model": result.model_id,
+                    "reply": result.text[:200], "usage": result.usage.as_dict(),
+                    "attempts": attempts}
+
+        return {"ok": False, "status": "error",
+                "detail": (attempts[0]["detail"] if attempts else "No model answered."),
+                "attempts": attempts}
 
     # ----------------------------------------------------------------- chat
     @app.post("/api/chat")
@@ -388,10 +414,14 @@ class _LazyApp:
     def __init__(self) -> None:
         self._app: FastAPI | None = None
 
-    def __call__(self, scope, receive, send):
+    async def __call__(self, scope, receive, send):
+        # ``async def`` matters: uvicorn decides ASGI3 vs ASGI2 by inspecting
+        # this callable, and a plain ``def`` returning a coroutine is treated as
+        # ASGI2 — which then fails with a missing-arguments TypeError on the
+        # first request. Verified by actually launching uvicorn.
         if self._app is None:
             self._app = create_app()
-        return self._app(scope, receive, send)
+        await self._app(scope, receive, send)
 
 
 app = _LazyApp()

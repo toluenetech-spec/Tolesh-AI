@@ -1,0 +1,100 @@
+{
+  "url": "http://127.0.0.1:8787",
+  "steps": {
+    "health": {
+      "status": "ok",
+      "providers_configured": [
+        "offline",
+        "ollama",
+        "dahl"
+      ],
+      "default_model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731"
+    },
+    "provider": {
+      "configured": true,
+      "base_url": "https://inference.dahl.global/v1",
+      "key_redacted": true,
+      "declared_models": [
+        "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+        "dahl:MiniMaxAI/MiniMax-M2.7",
+        "dahl:zai-org/GLM-5.3-Flash"
+      ],
+      "key_appears_in_payload": false
+    },
+    "discovery": {
+      "ok": true,
+      "status": "ok",
+      "count": 3,
+      "latency_ms": 234,
+      "models": [
+        "zai-org/GLM-5.3-Flash",
+        "MiniMaxAI/MiniMax-M2.7",
+        "deepseek-ai/DeepSeek-V4-Flash-0731"
+      ]
+    },
+    "connection_test": {
+      "ok": true,
+      "status": "ok",
+      "answered_by": "dahl:MiniMaxAI/MiniMax-M2.7",
+      "attempts": [
+        {
+          "model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+          "ok": false,
+          "status": 429,
+          "detail": "HTTP 429: This model is at concurrency capacity. Paid accounts are admitted first. Top up at https://inference.dahl.global/account — $0.01 per 1M tokens (in + out + cached) on any model, promo until 13 Nov 19:00 UTC. Retry after Retry-After, or switch model. Other models available now: MiniMaxAI/Min"
+        }
+      ]
+    },
+    "chat": {
+      "conversation_id": "f17b95b652077354",
+      "answered_by": "dahl:MiniMaxAI/MiniMax-M2.7",
+      "fallbacks_used": 1,
+      "usage": {
+        "prompt_tokens": 594,
+        "completion_tokens": 135,
+        "total_tokens": 729,
+        "latency_ms": 3269,
+        "model": "dahl:MiniMaxAI/MiniMax-M2.7",
+        "provider": "dahl",
+        "estimated": false
+      },
+      "chars": 173,
+      "reply": "\n\nI'm Tolesh, a personal AI assistant, and I don't know which specific model is answering this particular turn — Tolesh routes across several models with automatic fallback.",
+      "provider_errors": [
+        {
+          "kind": "provider_error",
+          "model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+          "message": "HTTP 429: This model is at concurrency capacity. Paid accounts are admitted first. Top up at https://inference.dahl.global/account — $0.01 per 1M tokens (in + out + cached) on any model, promo until 13 Nov 19:00 UTC. Retry after Retry-After, or switch model. Other models available now: MiniMaxAI/MiniMax-M2.7,",
+          "retryable": true,
+          "status": 429,
+          "retry_after": 10.0,
+          "attempt": 1
+        },
+        {
+          "kind": "provider_error",
+          "model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+          "message": "HTTP 429: This model is at concurrency capacity. Paid accounts are admitted first. Top up at https://inference.dahl.global/account — $0.01 per 1M tokens (in + out + cached) on any model, promo until 13 Nov 19:00 UTC. Retry after Retry-After, or switch model. Other models available now: MiniMaxAI/MiniMax-M2.7,",
+          "retryable": true,
+          "status": 429,
+          "retry_after": 10.0,
+          "attempt": 2
+        },
+        {
+          "kind": "provider_error",
+          "model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+          "message": "HTTP 429: This model is at concurrency capacity. Paid accounts are admitted first. Top up at https://inference.dahl.global/account — $0.01 per 1M tokens (in + out + cached) on any model, promo until 13 Nov 19:00 UTC. Retry after Retry-After, or switch model. Other models available now: MiniMaxAI/MiniMax-M2.7,",
+          "retryable": true,
+          "status": 429,
+          "retry_after": 10.0,
+          "attempt": 3
+        }
+      ],
+      "think_leaked": false
+    },
+    "persistence": {
+      "stored_messages": 2,
+      "assistant_model": "dahl:MiniMaxAI/MiniMax-M2.7"
+    }
+  },
+  "ok": true
+}

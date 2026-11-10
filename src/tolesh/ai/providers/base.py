@@ -44,13 +44,16 @@ class ProviderError(Exception):
 
     def __init__(self, message: str, *, provider: str, model: str,
                  retryable: bool = False, status: int | None = None,
-                 cause: BaseException | None = None):
+                 cause: BaseException | None = None,
+                 retry_after: float | None = None):
         super().__init__(message)
         self.provider = provider
         self.model = model
         self.retryable = retryable
         self.status = status
         self.cause = cause
+        # Seconds the endpoint asked us to wait, when it bothered to say so.
+        self.retry_after = retry_after
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +62,7 @@ class ProviderError(Exception):
             "message": str(self),
             "retryable": self.retryable,
             "status": self.status,
+            "retry_after": self.retry_after,
         }
 
 

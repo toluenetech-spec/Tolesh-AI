@@ -9,7 +9,7 @@
     "dialog_opened": true,
     "dialog_focus_inside": true,
     "dialog_escape_closes": true,
-    "streamed_reply": "How far! I dey here, no wahala ",
+    "streamed_reply": "\n\nHow far! 👋\n\nI dey fine sharp sharp.",
     "view_url_state": true,
     "view_restored_after_reload": true,
     "mobile_drawer_collapsed": true,
@@ -29,10 +29,13 @@
     "product": "Tolesh",
     "providers_configured": [
       "offline",
-      "ollama"
+      "ollama",
+      "dahl"
     ],
-    "default_model": null,
-    "time": 1794291897.0826063
+    "default_model": "dahl:deepseek-ai/DeepSeek-V4-Flash-0731",
+    "database": "/root/.local/share/tolesh/tolesh.db",
+    "static_frontend": true,
+    "time": 1794305983.475847
   },
   "passed": true,
   "boolean_checks": {

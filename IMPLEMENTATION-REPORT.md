@@ -256,6 +256,67 @@ QtWebEngine, memory written before the window opened and still present after
 the application exited. Evidence: `docs/desktop-launch-report.json`
 (`"ok": true`) and `docs/img/tolesh-desktop-integrated.png`.
 
+## 9c. Dahl provider + live web interface (this build)
+
+The placeholder Dahl entry (`https://api.dahl.ai/v1`, models `dahl-core` /
+`dahl-fast`) was replaced with the endpoint the owner supplied and the model ids
+that endpoint actually reports. Nothing in this section is inferred from
+documentation; each row was produced by a request.
+
+| Fact | How it was established |
+| --- | --- |
+| Base URL `https://inference.dahl.global/v1` | `GET /v1/models` → HTTP 200 |
+| Models: `deepseek-ai/DeepSeek-V4-Flash-0731`, `MiniMaxAI/MiniMax-M2.7`, `zai-org/GLM-5.3-Flash` | the same listing; the old placeholder ids never existed |
+| Key is valid | MiniMax answered a real completion in 2.3 s |
+| Free tier queues behind paid traffic | DeepSeek and GLM returned `429 {"error":{"code":"model_concurrency", ...}}` naming the models that were free |
+| Streaming works | `/api/chat` emitted 31 `token` frames, then `usage` and `done` |
+
+Code that changed for this:
+
+* `src/tolesh/ai/registry.py` — real Dahl catalogue; `chat` chain now tries the
+  other Dahl models before any other vendor; `models` became a patchable field so
+  a discovered list replaces the catalogue and stale ids are dropped.
+* `src/tolesh/ai/discovery.py` (new) — one `GET {base}/models`, honest about
+  `http_429` / `no_models` / transport failure instead of returning an empty
+  success.
+* `src/tolesh/ai/router.py` — `probe()` calls exactly one model so a connection
+  test cannot pass on a neighbour's answer; `provider_error` events now carry
+  `status` and the endpoint's `Retry-After`, which is honoured (capped at 3 s so
+  a live stream never stalls).
+* `src/tolesh/ai/providers/openai_compatible.py` — `ThinkFilter` removes inline
+  reasoning blocks from MiniMax/DeepSeek replies at the adapter boundary, and
+  `_raise_for_status` reads the body of a *streaming* error response (it used to
+  raise "Attempted to access streaming response content…", hiding the real 429).
+* `src/tolesh/server/app.py` — `GET /api/providers/{name}/models`; per-model
+  connection test; `_LazyApp.__call__` made `async` so `uvicorn
+  tolesh.server.app:app` is served as ASGI3 (as ASGI2 every request failed with
+  a missing-arguments `TypeError`).
+* `web/js/components.js`, `web/js/app.js`, `web/styles/app.css` — "Load model
+  list from endpoint" with tick boxes, capacity-aware status line, and a
+  `· fallback` marker on the bubble when a different model answered.
+* `src/tolesh/persona/prompt.py` — the prompt no longer names a model (it
+  produced replies claiming to be DeepSeek while MiniMax answered), and an empty
+  memory store is stated as a fact (the model had invented a remembered name and
+  city).
+
+Verified against the running backend and a real browser:
+
+| Check | Result |
+| --- | --- |
+| `scripts/verify_dahl.py` | `ok: true`; answered by `dahl:MiniMaxAI/MiniMax-M2.7` after one 429 fallback; 729 tokens, `estimated: false`; conversation stored with 2 messages |
+| `scripts/verify_web_ui.py` | `passed: true`, zero console/page errors, real streamed reply |
+| `scripts/capture_provider_models.py` | endpoint reported 3 models in 224 ms, rendered as tick boxes |
+| Memory round-trip | item added via `POST /api/memory`, recalled verbatim in a later conversation |
+| Empty memory | answers "nothing is stored yet" instead of inventing details |
+
+Evidence: `docs/dahl-report.json`, `docs/verification-report.json`,
+`docs/img/web-chat-reply.png`, `docs/img/web-provider-models.png`.
+
+**Not verified:** paid-tier admission on Dahl (no top-up was made), and the
+gateway's behaviour under sustained concurrency. The key used for these runs is
+the owner's and lives only in `~/.config/tolesh/providers.json` (mode `0600`),
+outside the repository.
+
 ## 10. Outstanding work
 
 - **Commercial distribution is blocked** — the inherited non-commercial licence
