@@ -15,12 +15,14 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from .schemas import (
-    MCPInvoke, MCPPromptRun, MCPServerPatch,
+    ConnectorActionRun, ConnectorOAuthComplete, ConnectorOAuthStart,
+    ConnectorTokenCreate, MCPInvoke, MCPPromptRun, MCPServerPatch,
 )
 
 
 def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_mcp(app, st)
+    _register_connectors(app, st)
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
@@ -190,3 +192,139 @@ def _consume_approval(st: Any, action_id: str, token: str) -> dict[str, Any]:
     if decision.get("status") == "error":
         raise HTTPException(status_code=400, detail=decision.get("message", "Approval failed."))
     return decision
+
+
+# -------------------------------------------------------------- connectors
+def _register_connectors(app: FastAPI, st: Any) -> None:
+    from fastapi.responses import HTMLResponse
+
+    from ..connectors import ConnectorError
+
+    @app.get("/api/connectors")
+    def list_connectors() -> dict[str, Any]:
+        """The provider catalogue plus every connected account.
+
+        Both halves matter: the UI needs to show what *can* be connected even
+        when nothing is, and an empty list alone cannot say that.
+        """
+        return {"providers": st.connectors.catalogue(),
+                "connections": st.connectors.connections()}
+
+    @app.post("/api/connectors/token")
+    def connect_with_token(body: ConnectorTokenCreate) -> dict[str, Any]:
+        try:
+            connection = st.connectors.add_token(
+                body.provider, body.token, label=body.label, base_url=body.base_url)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ConnectorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"connection": connection}
+
+    @app.post("/api/connectors/oauth/start")
+    def oauth_start(body: ConnectorOAuthStart) -> dict[str, Any]:
+        try:
+            return st.connectors.begin_oauth(
+                body.provider, client_id=body.client_id,
+                client_secret=body.client_secret, redirect_uri=body.redirect_uri,
+                scopes=body.scopes or None, base_url=body.base_url)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ConnectorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/connectors/oauth/callback")
+    def oauth_callback(code: str = "", state: str = "", error: str = "",
+                       error_description: str = "") -> Any:
+        """The redirect target registered with the provider.
+
+        This route is exempt from the API token guard because the provider's
+        redirect cannot carry a bearer header. The single-use ``state`` value
+        is the credential here, and it is consumed atomically; a callback
+        without it does nothing.
+        """
+        if error:
+            message = error_description or error
+            return HTMLResponse(
+                _callback_page(False, f"The provider refused the sign-in: {message}"),
+                status_code=400)
+        if not code or not state:
+            return HTMLResponse(_callback_page(False, "The callback was incomplete."),
+                                status_code=400)
+        try:
+            connection = st.connectors.complete_oauth(state, code)
+        except ConnectorError as exc:
+            return HTMLResponse(_callback_page(False, str(exc)), status_code=400)
+        return HTMLResponse(_callback_page(True, f"Connected {connection.get('label', '')}."))
+
+    @app.post("/api/connectors/oauth/complete")
+    def oauth_complete(body: ConnectorOAuthComplete) -> dict[str, Any]:
+        """For clients that capture the redirect themselves (desktop, mobile)."""
+        try:
+            return {"connection": st.connectors.complete_oauth(
+                body.state, body.code, base_url=body.base_url)}
+        except ConnectorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/connectors/{connection_id}/test")
+    def test_connection(connection_id: str) -> dict[str, Any]:
+        try:
+            return st.connectors.test(connection_id)
+        except ConnectorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/connectors/{connection_id}")
+    def delete_connection(connection_id: str) -> dict[str, Any]:
+        if not st.connectors.delete(connection_id):
+            raise HTTPException(status_code=404, detail="Unknown connection.")
+        return {"status": "ok"}
+
+    @app.get("/api/connectors/{connection_id}/actions")
+    def connector_actions(connection_id: str) -> dict[str, Any]:
+        try:
+            return {"actions": st.connectors.actions(connection_id)}
+        except ConnectorError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/connectors/{connection_id}/actions/{action}")
+    def run_connector_action(connection_id: str, action: str,
+                             body: ConnectorActionRun) -> dict[str, Any]:
+        """Run one action, parking writes behind the approval gate."""
+        connection = st.connectors.store.get(connection_id)
+        if connection is None:
+            raise HTTPException(status_code=404, detail="Unknown connection.")
+        actions = {a["name"]: a for a in st.connectors.actions(connection_id)}
+        if action not in actions:
+            raise HTTPException(status_code=404, detail=f"No action called {action}.")
+        needs_approval = actions[action]["requires_approval"]
+        if needs_approval and not body.approval_id:
+            decision = st.gate.request(
+                f"connector:{connection['provider']}:{action}", body.args,
+                reason=f"{connection['label']}: {action} changes data outside Tolesh.")
+            return {"status": "pending-approval", "action": action,
+                    "approval": decision}
+        if needs_approval:
+            _consume_approval(st, body.approval_id, body.approval_token or "")
+        try:
+            result = st.connectors.run_action(connection_id, action, body.args,
+                                              approved=needs_approval)
+        except ConnectorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "ok", "result": result}
+
+
+def _callback_page(ok: bool, message: str) -> str:
+    colour = "#1f7a4d" if ok else "#a3341f"
+    title = "Connected" if ok else "Not connected"
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Tolesh — {title}</title>
+<style>
+body{{font-family:system-ui,sans-serif;background:#f7f4ef;color:#22201d;
+display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.card{{max-width:32rem;padding:2rem 2.25rem;background:#fff;border-radius:14px;
+box-shadow:0 10px 30px rgba(0,0,0,.08);border-top:4px solid {colour}}}
+h1{{font-size:1.15rem;margin:0 0 .6rem;color:{colour}}}
+p{{margin:0;line-height:1.5;color:#4a453f}}
+</style></head><body><div class="card"><h1>{title}</h1>
+<p>{message}</p><p style="margin-top:1rem">You can close this tab and return to Tolesh.</p>
+</div></body></html>"""

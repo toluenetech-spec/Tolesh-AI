@@ -168,3 +168,33 @@ class MCPInvoke(BaseModel):
 class MCPPromptRun(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=200)
     arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConnectorTokenCreate(BaseModel):
+    """Connect an account with a personal access token."""
+
+    provider: str = Field(..., min_length=1, max_length=40)
+    token: str = Field(..., min_length=1, max_length=4000)
+    label: str = Field(default="", max_length=80)
+    base_url: str = Field(default="", max_length=500)
+
+
+class ConnectorOAuthStart(BaseModel):
+    provider: str = Field(..., min_length=1, max_length=40)
+    client_id: str = Field(default="", max_length=300)
+    client_secret: str = Field(default="", max_length=300)
+    redirect_uri: str = Field(..., min_length=1, max_length=500)
+    scopes: list[str] = Field(default_factory=list, max_length=20)
+    base_url: str = Field(default="", max_length=500)
+
+
+class ConnectorOAuthComplete(BaseModel):
+    state: str = Field(..., min_length=1, max_length=200)
+    code: str = Field(..., min_length=1, max_length=4000)
+    base_url: str = Field(default="", max_length=500)
+
+
+class ConnectorActionRun(BaseModel):
+    args: dict[str, Any] = Field(default_factory=dict)
+    approval_id: str | None = None
+    approval_token: str | None = None

@@ -37,6 +37,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..ai import ModelRouter, Registry, UsageLedger, discover_models
 from ..codeexec import network_isolation_available, run_python
+from ..connectors import ConnectorManager, ConnectorStore
 from ..conversation import ConversationManager
 from ..mcp_bridge import MCPManager, MCPServerStore
 from ..memory_ext import LayeredMemory
@@ -101,13 +102,15 @@ class AppState:
         # MCP sessions are process-wide state (a server may own a browser), so
         # they live on AppState rather than being rebuilt per request.
         self.mcp = MCPManager(MCPServerStore(), gate=self.gate)
+        self.connectors = ConnectorManager(ConnectorStore(db_path=path))
         self.db_path = path
 
     def close(self) -> None:
-        try:
-            self.mcp.close()
-        except Exception:
-            pass
+        for closer in (self.mcp.close, self.connectors.close):
+            try:
+                closer()
+            except Exception:
+                pass
         for obj in (self.ledger, self.memory, self.conversations, self.projects,
                     self.attachments, self.gate):
             try:
@@ -169,8 +172,13 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
 
     @app.middleware("http")
     async def token_guard(request: Request, call_next):
-        if api_token and request.url.path.startswith("/api/") \
-                and not request.url.path.startswith("/api/health"):
+        path = request.url.path
+        # The OAuth callback is reached by the provider's browser redirect,
+        # which cannot carry a bearer header. Its single-use ``state`` value is
+        # the credential, so exempting it does not open the API.
+        public = (path.startswith("/api/health")
+                  or path == "/api/connectors/oauth/callback")
+        if api_token and path.startswith("/api/") and not public:
             supplied = request.headers.get("Authorization", "")
             if supplied != f"Bearer {api_token}":
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
