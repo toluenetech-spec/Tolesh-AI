@@ -136,6 +136,27 @@ def test_notifications_can_be_marked_read(scheduler):
     assert scheduler.mark_all_read() == 0
 
 
+def test_a_job_fires_on_its_own_thread_with_no_request_in_between(tmp_path):
+    """Background work must not depend on the chat window being open.
+
+    Every other test here ticks the scheduler by hand, which proves the logic
+    but not the wiring. This one starts the real thread, makes no further
+    calls, and only reads the database afterwards — exactly what happens when
+    the browser tab is closed.
+    """
+    ran: list[str] = []
+    sched = JobScheduler(str(tmp_path / "jobs.db"),
+                         executor=lambda job, progress: ran.append(job["goal"]) or {},
+                         autostart=True, tick=0.05)
+    try:
+        job = sched.create("Unattended", goal="write the report",
+                           next_run_at=time.time() - 1)
+        assert wait_until(lambda: sched.get(job["id"])["status"] == "done", timeout=8)
+        assert ran == ["write the report"]
+    finally:
+        sched.close()
+
+
 def test_jobs_survive_a_restart(tmp_path):
     first = JobScheduler(str(tmp_path / "jobs.db"), executor=lambda j, p: {}, autostart=False)
     job = first.create("Persistent", goal="keep me", next_run_at=time.time() + 3600)

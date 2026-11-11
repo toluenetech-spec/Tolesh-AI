@@ -147,6 +147,34 @@ _STACK = re.compile(
     re.IGNORECASE,
 )
 
+# Where a person keeps their things is a durable preference, and people say it
+# without "prefer": "I keep my notes in Obsidian", "my notes live in Notion".
+# The preposition is required, so "I keep my answers short" stays small talk.
+_TOOLING = re.compile(
+    r"\b(?:i|we)\s+(?:usually\s+|always\s+|mostly\s+|now\s+)?"
+    r"(?:keep|store|host|run|track|manage|write|draft|organise|organize)\s+"
+    r"(?P<thing>(?:my|our|all my|all our)\s+[^.,;]{2,40}?)\s+"
+    r"(?:in|on|with|inside)\s+[^.,;]{2,40}",
+    re.IGNORECASE,
+)
+_TOOLING_STATE = re.compile(
+    r"\b(?P<thing>(?:my|our)\s+(?:notes?|files?|code|tasks?|photos?|journal|documents?|"
+    r"projects?|inbox|calendar|budget|writing|bookmarks?))\s+"
+    r"(?:live|lives|are|is|sit|sits|stay|stays)\s+(?:in|on)\s+[^.,;]{2,40}",
+    re.IGNORECASE,
+)
+
+# A correction rarely repeats the original verb: "I keep my notes in Obsidian"
+# is answered with "I moved them to Notion". Without this, the replacement is
+# dropped and the stale fact survives.
+_CHANGE = re.compile(
+    r"\b(?:i|we)\s+(?:have\s+|just\s+|now\s+)?"
+    r"(?:moved|switched|migrated|changed|swapped|replaced|renamed|upgraded)\b"
+    r"(?:\s+(?P<thing>(?:my|our)\s+[^.,;]{2,30}?))?\s+"
+    r"(?:to|from)\s+[^.,;]{2,40}",
+    re.IGNORECASE,
+)
+
 # Named slots. A new value for the same slot replaces the old one instead of
 # sitting beside it, which is what makes "actually my name is…" work.
 _SLOTS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -173,8 +201,11 @@ class Candidate:
 
 def _clean_sentence(sentence: str) -> str:
     text = re.sub(r"\s+", " ", sentence).strip(" \t\n-–—*\"'")
-    text = re.sub(r"^(?:and|but|so|also|oh|well|okay|ok)[,\s]+", "", text,
-                  flags=re.IGNORECASE)
+    text = re.sub(r"^(?:and|but|so|also|oh|well|okay|ok|actually|honestly|no wait|sorry)[,\s]+",
+                  "", text, flags=re.IGNORECASE)
+    # "I moved my notes to Notion, not Obsidian" — the trailing contrast is the
+    # fact being replaced, and keeping it would store the stale value twice.
+    text = re.sub(r",\s+not\s+[^,.;]{1,40}[.!?]?$", "", text, flags=re.IGNORECASE)
     if not text:
         return ""
     # Keep the user's wording; only fix the capitalisation of a fragment.
@@ -199,11 +230,37 @@ def is_hypothetical(text: str) -> bool:
     return bool(_HYPOTHETICAL.search(text) or _FICTION.search(text))
 
 
+def _tool_slot(text: str) -> str | None:
+    """The slot a tooling fact occupies: "my notes" -> ``preference:note``.
+
+    Two statements about the same thing are the same fact however they are
+    phrased ("I keep my notes in Obsidian" / "I moved my notes to Notion"), so
+    they share a slot and the newer one replaces the older one. Without this,
+    a correction that shares no wording becomes a contradiction instead.
+    """
+    for pattern in (_TOOLING, _TOOLING_STATE, _CHANGE):
+        match = pattern.search(text)
+        if not match:
+            continue
+        thing = (match.groupdict().get("thing") or "").strip()
+        if not thing:
+            continue
+        thing = re.sub(r"^(?:all\s+)?(?:my|our)\s+", "", thing, flags=re.IGNORECASE)
+        words = re.findall(r"[a-z0-9]+", thing.lower())
+        if not words:
+            continue
+        word = words[-1]
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            word = word[:-1]
+        return f"preference:{word}"
+    return None
+
+
 def _slot_for(text: str) -> str | None:
     for pattern, slot in _SLOTS:
         if pattern.search(text):
             return slot
-    return None
+    return _tool_slot(text)
 
 
 def _sentences(text: str) -> list[str]:
@@ -315,6 +372,10 @@ class RuleExtractor:
             return "preference"
         if _STACK.search(sentence):
             return "preference"
+        if _TOOLING.search(sentence) or _TOOLING_STATE.search(sentence):
+            return "preference"
+        if _CHANGE.search(sentence):
+            return "project" if project_id else "preference"
         if _TASK.search(sentence):
             return "task"
         return None

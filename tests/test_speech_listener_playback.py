@@ -112,7 +112,13 @@ def test_only_successful_voice_reply_opens_follow_up(playback, monkeypatch, outc
         while not listener.state_manager.is_hot_window_active() and time.monotonic() < deadline:
             time.sleep(.001)
     assert listener.state_manager.is_hot_window_active() is (outcome == 'completed')
-    assert activity.get_tolesh_state().state is activity.ToleshState.IDLE
+    # The face must never be left thinking or speaking once the reply is over.
+    # After a successful reply the follow-up window is open, so LISTENING is a
+    # correct resting state — asserting IDLE there made this test a race.
+    state = activity.get_tolesh_state().state
+    allowed = ({activity.ToleshState.IDLE, activity.ToleshState.LISTENING}
+               if outcome == 'completed' else {activity.ToleshState.IDLE})
+    assert state in allowed, state
 
 
 def test_rejected_acknowledgement_releases_presence_without_a_thinking_tune(playback):

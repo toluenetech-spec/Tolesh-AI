@@ -255,7 +255,11 @@ class MemoryService:
         result: dict[str, Any] = {"created": [], "merged": [], "corrected": [],
                                   "forgotten": [], "rejected": []}
         for candidate in candidates:
-            if self.store.is_suppressed(candidate.content):
+            # A forget must run even when its own phrase is already suppressed:
+            # otherwise a fact that crept back in could never be removed a
+            # second time, because the first "forget" would block the retry.
+            if (candidate.operation != "forget"
+                    and self.store.is_suppressed(candidate.content)):
                 result["rejected"].append({"content": candidate.content,
                                            "reason": "forgotten by the user"})
                 continue

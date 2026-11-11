@@ -37,15 +37,36 @@ W_IMPORTANCE = 0.07
 # up past any threshold and every stored fact came back for "hello".
 DEFAULT_MIN_SIMILARITY = 0.10
 
+# Similarity floor for a memory whose slot the question names by word. Below a
+# strong lexical match, above the gate, so it is included but not crowned.
+SLOT_MATCH_SIMILARITY = 0.45
+
 # Pinned memories are always offered: the user marked them as must-know, which
 # outranks anything a similarity score has to say.
 ALWAYS_INCLUDE_PINNED = True
 
 
+def _similarity(query: str, item: dict[str, Any]) -> float:
+    """Content similarity, with the slot as a floor.
+
+    A fact's slot is its subject, so a question that names the subject is about
+    the fact even when the wording has drifted: after "I keep my notes in
+    Obsidian" is corrected to "I moved my notes to Notion", "where do I keep my
+    notes?" shares almost no words with the current text, but it is plainly the
+    same subject. The floor is deliberately below a strong lexical match so
+    wording still decides between competing facts.
+    """
+    sim = mtext.similarity(query, item["content"])
+    key = item.get("key") or ""
+    if key and key in mtext.slot_terms(query):
+        return max(sim, SLOT_MATCH_SIMILARITY)
+    return sim
+
+
 def score_item(item: dict[str, Any], query: str, *, now: float,
                project_id: str | None) -> tuple[float, list[str]]:
     """Score one memory against one query, and say which words matched."""
-    sim = mtext.similarity(query, item["content"])
+    sim = _similarity(query, item)
     recency = mtext.recency_weight(item["updated_at"], now)
     pinned = 1.0 if item.get("pinned") else 0.0
     confidence = float(item.get("confidence") or 0.0)
@@ -93,7 +114,7 @@ def select(items: Iterable[dict[str, Any]], query: str, *, now: float,
     for item in items:
         if not eligible(item, project_id):
             continue
-        sim = mtext.similarity(query, item["content"])
+        sim = _similarity(query, item)
         total, matched = score_item(item, query, now=now, project_id=project_id)
         pinned = ALWAYS_INCLUDE_PINNED and item.get("pinned")
         if sim < min_similarity and not pinned:

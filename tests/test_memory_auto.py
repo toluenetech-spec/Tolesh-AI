@@ -69,6 +69,22 @@ def test_a_long_sentence_becomes_separate_facts():
     assert any("short answers" in c for c in contents)
 
 
+def test_where_things_are_kept_counts_as_a_preference():
+    """People state tool choices without ever saying "prefer"."""
+    rules = RuleExtractor()
+    for text in ("I keep my notes in Obsidian",
+                 "I run my notes in Obsidian.",
+                 "My notes live in Obsidian",
+                 "I store all my photos in Dropbox"):
+        found = rules.extract_text(text)
+        assert [c.category for c in found] == ["preference"], text
+        assert found[0].content.rstrip(".") == text.rstrip("."), text
+
+    # The preposition is what separates a fact from small talk.
+    assert rules.extract_text("I keep my answers short.") == []
+    assert rules.extract_text("What do I keep in Obsidian?") == []
+
+
 def test_ordinary_conversation_is_not_stored():
     """"Hello, how are you?" is not a fact about anyone."""
     assert RuleExtractor().extract_text("Hello, how are you?") == []
@@ -123,11 +139,59 @@ def test_correction_supersedes_without_deleting(service):
     _learn(service, "My name is Ada.")
     _learn(service, "Actually my name is Adaeze now.")
     active = service.memory.list()
-    assert [i["content"].rstrip(".") for i in active] == ["Actually my name is Adaeze now"]
+    assert [i["content"].rstrip(".") for i in active] == ["My name is Adaeze now"]
     history = service.memory.list(include_superseded=True)
     old = [i for i in history if i["content"] == "My name is Ada."][0]
     assert old["status"] == "superseded"
     assert old["superseded_by"] == active[0]["id"]
+
+
+def test_a_swapped_tool_replaces_the_old_one(service):
+    """A correction usually shares almost no wording with what it replaces."""
+    _learn(service, "I keep my notes in Obsidian.")
+    result = _learn(service, "Actually I moved my notes to Notion, not Obsidian.")
+
+    active = [i["content"] for i in service.memory.list()]
+    assert any("Notion" in c for c in active)
+    assert not any("Obsidian" in c for c in active), active
+    # One new row plus the audit record of the one it replaced.
+    assert len(result["corrected"]) == 2
+
+
+def test_a_rephrased_fact_is_still_found_by_its_subject(service):
+    """The question names the subject; the fact's wording has moved on."""
+    _learn(service, "I keep my notes in Obsidian.")
+    _learn(service, "Actually I moved my notes to Notion, not Obsidian.")
+
+    picked = service.memory_service.retrieve("Where do I keep my notes?", limit=5)
+    assert [i["content"] for i in picked] == ["I moved my notes to Notion"]
+
+    svc = service.memory_service
+    svc.apply_candidates(svc.extract_turns(
+        [{"role": "user", "content": "Forget where I keep my notes."}]))
+    assert service.memory.list() == []
+    assert svc.retrieve("Where do I keep my notes?", limit=5) == []
+
+
+def test_forgetting_twice_still_works(service):
+    """The second "forget it" must not be swallowed by the first one's record."""
+    _learn(service, "I keep my notes in Obsidian.")
+    svc = service.memory_service
+
+    def forget():
+        return svc.apply_candidates(svc.extract_turns(
+            [{"role": "user", "content": "Forget where I keep my notes."}]))
+
+    forget()
+    assert service.memory.list() == []
+
+    # The fact returns by another route — an old client, an import, a re-teach.
+    service.memory.add("preference", "I keep my notes in Obsidian.",
+                       key="preference:note", origin="auto")
+    assert len(service.memory.list()) == 1
+
+    forget()
+    assert service.memory.list() == [], "a repeated forget must still delete"
 
 
 def test_forget_removes_and_blocks_reintroduction(service):

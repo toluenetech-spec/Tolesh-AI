@@ -338,26 +338,30 @@ def main() -> int:
 
     # ----------------------------------------------------------------- jobs
     def jobs():
+        # Scheduled an hour out so pause/resume test the controls rather than
+        # racing the scheduler, which would otherwise pick the job up at once.
         job = client.post("/api/jobs", json={
             "name": "audit job", "goal": "Reply ready.", "kind": "prompt",
-            "schedule": "once"}).json()["job"]
+            "schedule": "once", "run_at": time.time() + 3600}).json()["job"]
         paused = client.post(f"/api/jobs/{job['id']}/pause")
         resumed = client.post(f"/api/jobs/{job['id']}/resume")
         ran = client.post(f"/api/jobs/{job['id']}/run").json()["job"]
         # run_now marks the job due; the scheduler thread picks it up on its next
         # tick, so give it a moment before claiming it did nothing.
-        deadline = time.time() + 8
+        deadline = time.time() + 10
         runs = []
         while time.time() < deadline:
             runs = client.get(f"/api/jobs/{job['id']}/runs").json()["runs"]
-            if runs:
+            if runs and runs[0].get("status") in ("done", "ok", "failed", "error"):
                 break
             time.sleep(0.2)
         client.delete(f"/api/jobs/{job['id']}")
+        finished = [r.get("status") for r in runs]
         return (paused.status_code == 200 and resumed.status_code == 200
                 and ran.get("status") in ("scheduled", "running", "ok", "queued")
-                and runs,
-                f"run status={ran.get('status')}, {len(runs)} recorded run(s)")
+                and any(s in ("done", "ok", "failed", "error") for s in finished),
+                f"pause={paused.status_code} resume={resumed.status_code} "
+                f"run={ran.get('status')} history={len(runs)} {finished}")
 
     check("jobs: schedule, pause, resume, run now, history", jobs)
 

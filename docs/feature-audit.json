@@ -1,5 +1,5 @@
 {
-  "generated_at": 1794362160.886419,
+  "generated_at": 1794363461.6903327,
   "features": [
     {
       "feature": "health reports the product and version",
@@ -34,7 +34,7 @@
     {
       "feature": "create conversation",
       "ok": true,
-      "detail": "66a9d6c37872c4c3",
+      "detail": "a19d5f6f610148c0",
       "gated": false
     },
     {
@@ -82,7 +82,7 @@
     {
       "feature": "branch a conversation",
       "ok": true,
-      "detail": "new conversation ea8985aedf2dfac3",
+      "detail": "new conversation d5f17ac000d2b8ae",
       "gated": false
     },
     {
@@ -94,7 +94,7 @@
     {
       "feature": "projects: create, patch, file a conversation",
       "ok": true,
-      "detail": "project e6cffcf89d887bf0 linked to the conversation",
+      "detail": "project 849038059f5e0380 linked to the conversation",
       "gated": false
     },
     {
@@ -106,7 +106,7 @@
     {
       "feature": "upload an attachment",
       "ok": true,
-      "detail": "uploaded 134eff589452dcab",
+      "detail": "uploaded f18feff53fac9f29",
       "gated": false
     },
     {
@@ -166,7 +166,7 @@
     {
       "feature": "jobs: schedule, pause, resume, run now, history",
       "ok": true,
-      "detail": "run status=scheduled, 1 recorded run(s)",
+      "detail": "pause=200 resume=200 run=scheduled history=1 ['done']",
       "gated": false
     },
     {
@@ -226,7 +226,7 @@
     {
       "feature": "usage ledger records tokens",
       "ok": true,
-      "detail": "{\"requests\": 7, \"prompt_tokens\": 5673, \"completion_tokens\": 716, \"total_tokens\": 6389, \"avg_latency_ms\": 1.9, \"errors\": ",
+      "detail": "{\"requests\": 7, \"prompt_tokens\": 5673, \"completion_tokens\": 716, \"total_tokens\": 6389, \"avg_latency_ms\": 2.0, \"errors\": ",
       "gated": false
     },
     {

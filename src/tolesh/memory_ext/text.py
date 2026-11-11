@@ -197,31 +197,6 @@ def recency_weight(updated_at: float, now: float, *, half_life_days: float = 45.
     return math.pow(0.5, age_days / half_life_days)
 
 
-def hash_vector(text: str, dims: int = 256) -> dict[int, float]:
-    """Signed hashing-trick TF vector, L2-normalised.
-
-    Stored per memory so a query can be compared with a dot product. It is a
-    real vector index — it just isn't a learned embedding, and calling it
-    "semantic" would be a lie. Used as a tie-breaker behind the lexical score.
-    """
-    counts: dict[int, float] = {}
-    for gram in trigrams(text):
-        h = hash(gram)
-        index = h % dims
-        sign = 1.0 if (h >> 8) & 1 else -1.0
-        counts[index] = counts.get(index, 0.0) + sign
-    norm = math.sqrt(sum(v * v for v in counts.values())) or 1.0
-    return {k: v / norm for k, v in counts.items() if abs(v) > 1e-9}
-
-
-def cosine(a: dict[int, float], b: dict[int, float]) -> float:
-    if not a or not b:
-        return 0.0
-    if len(a) > len(b):
-        a, b = b, a
-    return sum(v * b.get(k, 0.0) for k, v in a.items())
-
-
 def keywords(text: str, limit: int = 8) -> list[str]:
     """The words worth showing as a memory's "why this matched" hint."""
     seen: list[str] = []
@@ -231,6 +206,24 @@ def keywords(text: str, limit: int = 8) -> list[str]:
         if len(seen) >= limit:
             break
     return seen
+
+
+# Things people keep somewhere ("my notes", "my photos"). They name the subject
+# of a fact, so they stay matchable after the fact is rephrased: "I keep my notes
+# in Obsidian" becomes "I moved my notes to Notion", and "where do I keep my
+# notes?" has to reach whichever of those is current.
+SLOT_NOUNS = ("note", "file", "code", "task", "photo", "journal", "document",
+              "project", "inbox", "calendar", "budget", "writing", "bookmark")
+
+
+def slot_terms(text: str) -> set[str]:
+    """Slots a phrase is about: "where do I keep my notes?" -> {"preference:note"}."""
+    words = set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+    found: set[str] = set()
+    for noun in SLOT_NOUNS:
+        if noun in words or f"{noun}s" in words:
+            found.add(f"preference:{noun}")
+    return found
 
 
 def first_sentence(text: str, *, limit: int = 400) -> str:

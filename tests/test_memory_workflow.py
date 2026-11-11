@@ -131,7 +131,9 @@ def test_the_full_memory_workflow(tmp_path):
     client.post("/api/chat/sync", json={"message": "What is my name?",
                                         "conversation_id": cid2})
     assert "Adaeze" in router.last_system
-    assert "My name is Ada" not in router.last_system
+    # The replaced wording must be gone. The full stop matters: "Adaeze" itself
+    # contains "Ada", so a bare substring check would always fail.
+    assert "My name is Ada." not in router.last_system
 
     # 9. Forget the location.
     client.post("/api/chat/sync", json={"message": "Forget that I live in Lagos.",

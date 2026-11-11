@@ -67,6 +67,13 @@ In `model` mode the reply is parsed as strict JSON; anything unparseable falls
 back to the rules rather than storing half a sentence. Both modes pass through
 the same safety filter and the same dedup.
 
+The rules recognise, among others: identity and place ("my name is…", "I live
+in…", "I'm a … engineer"), preferences ("I prefer…", "I hate…"), working style
+("keep it short"), projects ("I'm building…"), decisions ("we went with…"),
+tasks ("I still need to…"), and where things are kept ("I keep my notes in
+Obsidian", "my notes live in Notion"). A statement with no cue at all is left
+alone on purpose: guessing is how a memory store fills with fiction.
+
 ## How retrieval works
 
 `MemoryService.context_for(question)` scores every active memory and returns at
@@ -88,6 +95,25 @@ gate the constant bonuses (recency, confidence, project) added up past any
 threshold and a greeting retrieved the entire store. Pinned memories bypass the
 gate because you marked them as must-know.
 
+### Slots, and why wording drift does not lose a fact
+
+Some facts occupy a named slot: `personal:name`, `personal:location`,
+`personal:job`, and `preference:<thing>` for "I keep my notes in Obsidian".
+A new value for a slot **replaces** the old one, so a correction works even when
+it shares almost no words with what it replaces:
+
+```
+I keep my notes in Obsidian.                  → slot preference:note
+I moved my notes to Notion, not Obsidian.     → same slot → old row superseded
+```
+
+The same slot name is what keeps the fact findable afterwards. "Where do I keep
+my notes?" shares almost no vocabulary with "I moved my notes to Notion", so the
+similarity score alone would miss it; a question that names a slot's subject gets
+a similarity floor of 0.45 (`SLOT_MATCH_SIMILARITY`). Forgetting uses the same
+rule, which is why "forget where I keep my notes" removes the fact however it was
+last worded.
+
 **Project isolation** is enforced during selection, not by the prompt: a memory
 filed under project A is never eligible in project B. Global memories (no
 project) are eligible everywhere, which is what lets "prefers short answers"
@@ -107,8 +133,9 @@ It is not a semantic model. The honest limits:
   are both `tech`);
 - character n-grams carry the precision, so paraphrase without shared words
   will miss;
-- there is no neural embedding and no vector database. A 256-dimension hashed
-  TF vector exists as a tie-breaker only.
+- there is no neural embedding and no vector database behind this store. (The
+  app does keep a vector index for *conversation summaries* — see
+  `memory/db.py:search_hybrid` — but long-term memory does not use it.)
 
 The table lives in `src/tolesh/memory_ext/text.py` and is meant to grow.
 
@@ -118,9 +145,11 @@ The table lives in `src/tolesh/memory_ext/text.py` and is meant to grow.
 |---|---|
 | Same fact said twice | merged into one row, confidence raised, timestamp refreshed |
 | Named slot restated ("my name is Ada" → "my name is Adaeze") | old row marked `superseded`, points at its replacement; retrieval only sees the new one |
+| Tool swapped ("I keep my notes in Obsidian" → "I moved my notes to Notion") | same slot (`preference:note`), so the old row is superseded even though the wording barely overlaps |
 | Explicit correction ("actually…", "I switched to…", "not anymore") | the closest active memory in the same category and project is superseded |
 | "Forget that I live in Lagos" | matching rows are deleted (including superseded history) and a suppression is recorded |
 | Same fact reappears later | rejected because a suppression matches it |
+| "Forget it" said again after it came back | still works — a forget is never blocked by its own suppression |
 
 Superseded rows are kept on purpose: "I used to think X, you corrected me to Y"
 is something you may want to audit. They are hidden by default and shown with

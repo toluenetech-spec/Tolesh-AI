@@ -139,6 +139,29 @@ def test_a_forgotten_fact_cannot_return_in_different_words(client):
     assert state.memory.list() == []
 
 
+def test_the_same_fact_typed_twice_does_not_become_two_rows(client):
+    """Manual adds keep the wording you typed, but not a second copy of it."""
+    api, state = client
+    body = {"category": "preference", "content": "Prefers short answers."}
+    first = api.post("/api/memory", json=body).json()
+    second = api.post("/api/memory", json=body).json()
+
+    assert first["id"] == second["id"]
+    assert second.get("duplicate") is True
+    assert len(state.memory.list()) == 1
+
+    # Trailing punctuation and casing are not a new fact either.
+    third = api.post("/api/memory", json={
+        "category": "preference", "content": "  prefers SHORT answers  "}).json()
+    assert third["id"] == first["id"]
+    assert len(state.memory.list()) == 1
+
+    # Two similar-but-different preferences must both survive.
+    api.post("/api/memory", json={"category": "preference",
+                                  "content": "Prefers short answers in chat, long in docs."})
+    assert len(state.memory.list()) == 2
+
+
 def test_project_memory_is_invisible_from_another_project(client):
     api, state = client
     project = api.post("/api/projects", json={"name": "Apollo"}).json()["project"]

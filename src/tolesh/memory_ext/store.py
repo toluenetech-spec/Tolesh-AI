@@ -430,6 +430,9 @@ class LayeredMemory:
                 # an inferred correction; the user edits it themselves.
                 continue
             score = mtext.similarity(content, row["content"])
+            if row.get("key") and row["key"] in mtext.slot_terms(content):
+                # Same subject by name, however the wording moved on.
+                score = max(score, 0.45)
             if score >= threshold and (best is None or score > best[0]):
                 best = (score, row)
         return best[1] if best else None
@@ -482,7 +485,8 @@ class LayeredMemory:
         it in the panel's history.
         """
         matches = [row for row in self.list(limit=10000, include_superseded=True)
-                   if mtext.similarity(phrase, row["content"]) >= 0.45]
+                   if mtext.similarity(phrase, row["content"]) >= 0.45
+                   or (row.get("key") and row["key"] in mtext.slot_terms(phrase))]
         matches.sort(key=lambda row: mtext.similarity(phrase, row["content"]), reverse=True)
         matches = matches[:limit]
         for row in matches:

@@ -870,6 +870,15 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
     def add_memory(body: MemoryCreate) -> dict[str, Any]:
         if body.project_id and st.projects.get(body.project_id) is None:
             raise HTTPException(status_code=404, detail="Project not found")
+        # Typing the same fact twice must not create two rows, but two merely
+        # similar facts must both survive — so this compares normalised text
+        # exactly rather than running the fuzzy near-duplicate merge.
+        wanted = " ".join(body.content.lower().split()).rstrip(".")
+        for existing in st.memory.list(category=body.category, limit=10000):
+            same_text = " ".join(existing["content"].lower().split()).rstrip(".")
+            same_project = (existing["project_id"] or None) == (body.project_id or None)
+            if same_text == wanted and same_project and not existing["disabled"]:
+                return {**existing, "duplicate": True}
         try:
             return st.memory.add(body.category, body.content,
                                  source=body.source, pinned=body.pinned,
