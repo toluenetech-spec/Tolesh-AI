@@ -304,6 +304,9 @@ class JobCreate(BaseModel):
                              description="Five-field cron expression, e.g. '0 9 * * mon-fri'.")
     run_at: float | None = None
     max_runs: int | None = Field(default=None, ge=1, le=10000)
+    max_attempts: int | None = Field(default=None, ge=1, le=20,
+                                     description="Consecutive failures before the job pauses.")
+    backoff_sec: float | None = Field(default=None, ge=1, le=86400)
     notify: bool = True
     conversation_id: str | None = None
 
@@ -315,6 +318,8 @@ class JobPatch(BaseModel):
     interval_sec: float | None = Field(default=None, ge=5, le=604800)
     cron: str | None = Field(default=None, max_length=120)
     max_runs: int | None = Field(default=None, ge=1, le=10000)
+    max_attempts: int | None = Field(default=None, ge=1, le=20)
+    backoff_sec: float | None = Field(default=None, ge=1, le=86400)
     notify: bool | None = None
 
 

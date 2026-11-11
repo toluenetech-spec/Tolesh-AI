@@ -591,7 +591,9 @@ def _register_jobs(app: FastAPI, st: Any) -> None:
                 body.name or body.goal[:60], goal=body.goal, kind=body.kind,
                 schedule=body.schedule, interval_sec=body.interval_sec,
                 cron=body.cron, next_run_at=body.run_at, max_runs=body.max_runs,
-                notify=body.notify, conversation_id=body.conversation_id)
+                notify=body.notify, max_attempts=body.max_attempts,
+                backoff_sec=body.backoff_sec,
+                conversation_id=body.conversation_id)
         except JobError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"job": job}

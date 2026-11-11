@@ -383,6 +383,37 @@ def main() -> int:
 
     check("jobs: cron expression validates and schedules", calendar_jobs)
 
+    def failure_recovery():
+        """A broken recurring job must pause and say so, not retry forever."""
+        original = state.jobs._executor
+
+        def always_fails(job, progress):
+            raise RuntimeError("audit: the upstream is down")
+
+        state.jobs._executor = always_fails
+        try:
+            job = client.post("/api/jobs", json={
+                "name": "audit failure", "goal": "Reply ready.", "kind": "prompt",
+                "schedule": "interval", "interval_sec": 3600,
+                "max_attempts": 1, "backoff_sec": 1}).json()["job"]
+            client.post(f"/api/jobs/{job['id']}/run")
+            deadline = time.time() + 10
+            stored = client.get(f"/api/jobs/{job['id']}").json()["job"]
+            while time.time() < deadline and stored["status"] != "paused":
+                time.sleep(0.2)
+                stored = client.get(f"/api/jobs/{job['id']}").json()["job"]
+            notes = client.get("/api/notifications").json()["notifications"]
+            announced = any("paused after" in n["title"] for n in notes)
+            client.delete(f"/api/jobs/{job['id']}")
+            return (stored["status"] == "paused" and stored["attempts"] == 1
+                    and announced,
+                    f"status={stored['status']} attempts={stored['attempts']} "
+                    f"notified={announced}")
+        finally:
+            state.jobs._executor = original
+
+    check("jobs: a failing job pauses at the limit and notifies", failure_recovery)
+
     check("notifications are readable", lambda: (
         client.post("/api/notifications/read-all").status_code == 200,
         "mark-all-read accepted"))

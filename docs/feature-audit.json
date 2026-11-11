@@ -1,5 +1,5 @@
 {
-  "generated_at": 1794376052.258726,
+  "generated_at": 1794376240.496265,
   "features": [
     {
       "feature": "health reports the product and version",
@@ -34,7 +34,7 @@
     {
       "feature": "create conversation",
       "ok": true,
-      "detail": "d3c1dcf196246c95",
+      "detail": "2005d0add522c990",
       "gated": false
     },
     {
@@ -82,7 +82,7 @@
     {
       "feature": "branch a conversation",
       "ok": true,
-      "detail": "new conversation 87d24bb56d506f97",
+      "detail": "new conversation 63c4b0724caa9661",
       "gated": false
     },
     {
@@ -94,7 +94,7 @@
     {
       "feature": "projects: create, patch, file a conversation",
       "ok": true,
-      "detail": "project 6ff8f742ddbe9d07 linked to the conversation",
+      "detail": "project a5d1edcc68710063 linked to the conversation",
       "gated": false
     },
     {
@@ -106,7 +106,7 @@
     {
       "feature": "upload an attachment",
       "ok": true,
-      "detail": "uploaded dbaea8e51f36bdaf",
+      "detail": "uploaded 9b93f739a2e9a22d",
       "gated": false
     },
     {
@@ -176,6 +176,12 @@
       "gated": false
     },
     {
+      "feature": "jobs: a failing job pauses at the limit and notifies",
+      "ok": true,
+      "detail": "status=paused attempts=1 notified=True",
+      "gated": false
+    },
+    {
       "feature": "notifications are readable",
       "ok": true,
       "detail": "mark-all-read accepted",
@@ -232,7 +238,7 @@
     {
       "feature": "usage ledger records tokens",
       "ok": true,
-      "detail": "{\"requests\": 7, \"prompt_tokens\": 5673, \"completion_tokens\": 716, \"total_tokens\": 6389, \"avg_latency_ms\": 2.6, \"errors\": ",
+      "detail": "{\"requests\": 7, \"prompt_tokens\": 5673, \"completion_tokens\": 716, \"total_tokens\": 6389, \"avg_latency_ms\": 2.7, \"errors\": ",
       "gated": false
     },
     {
@@ -327,14 +333,14 @@
     }
   ],
   "summary": {
-    "passed": 50,
+    "passed": 51,
     "failed": 0,
     "gated": 4,
-    "total": 54
+    "total": 55
   },
   "routes": {
     "total": 108,
-    "visited": 94,
+    "visited": 96,
     "uncovered": [
       "/api/connectors/oauth/callback",
       "/api/connectors/oauth/complete",

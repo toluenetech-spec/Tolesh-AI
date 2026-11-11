@@ -15,7 +15,11 @@ What it guarantees:
     job does not pile up behind itself;
   * a calendar job ("cron") schedules its next run from the next matching
     minute instead, because the calendar does not care when the last one
-    finished — and it cannot fire twice in the same minute.
+    finished — and it cannot fire twice in the same minute;
+  * a recurring job retries a failure with exponential backoff, and after
+    ``max_attempts`` consecutive failures it pauses and says so in a
+    notification rather than failing quietly forever. A one-off job is not
+    retried — it has nothing left to run — so it stays ``failed``.
 """
 
 from __future__ import annotations
@@ -31,6 +35,13 @@ from .cron import CronError, CronExpression
 
 TERMINAL = {"done", "failed", "cancelled"}
 KINDS = ("agent", "prompt")
+
+# A failed run is retried with exponential backoff, and the job pauses once it
+# has failed this many times in a row. Without a limit a broken job retries
+# forever, silently, and the user only finds out by opening the Jobs tab.
+DEFAULT_MAX_ATTEMPTS = 3
+DEFAULT_BACKOFF_SEC = 60.0
+MAX_BACKOFF_SEC = 3600.0
 
 
 class JobError(RuntimeError):
@@ -93,6 +104,12 @@ class JobScheduler:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN cron TEXT")
             if "last_fired_minute" not in job_columns:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN last_fired_minute INTEGER")
+            # Additive migration: failure recovery. NULL means "use the
+            # defaults", so jobs created before this change keep working.
+            for column, ddl in (("attempts", "INTEGER"), ("max_attempts", "INTEGER"),
+                                ("backoff_sec", "REAL")):
+                if column not in job_columns:
+                    self._conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {ddl}")
             self._conn.commit()
 
     # ------------------------------------------------------------ validation
@@ -140,7 +157,8 @@ class JobScheduler:
                schedule: str = "once", interval_sec: float | None = None,
                cron: str | None = None,
                next_run_at: float | None = None, max_runs: int | None = None,
-               notify: bool = True,
+               notify: bool = True, max_attempts: int | None = None,
+               backoff_sec: float | None = None,
                conversation_id: str | None = None) -> dict[str, Any]:
         if kind not in KINDS:
             raise JobError("A job kind must be one of: " + ", ".join(KINDS))
@@ -154,6 +172,10 @@ class JobScheduler:
             cron = self._checked_cron(cron)
         else:
             cron = None
+        if max_attempts is not None and not 1 <= int(max_attempts) <= 20:
+            raise JobError("max_attempts must be between 1 and 20.")
+        if backoff_sec is not None and not 1 <= float(backoff_sec) <= 86400:
+            raise JobError("backoff_sec must be between 1 and 86400 seconds.")
         now = time.time()
         job_id = f"job-{secrets.token_hex(5)}"
         if next_run_at is not None:
@@ -168,11 +190,12 @@ class JobScheduler:
                 """INSERT INTO jobs (id, name, kind, goal, schedule, interval_sec,
                     next_run_at, status, created_at, updated_at, last_run_at,
                     last_result, error, run_count, max_runs, notify,
-                    conversation_id, cron)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    conversation_id, cron, attempts, max_attempts, backoff_sec)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (job_id, (name or goal)[:120], kind, goal.strip(), schedule,
                  interval_sec, start_at, "scheduled", now, now, None, "", "",
-                 0, max_runs, 1 if notify else 0, conversation_id or "", cron))
+                 0, max_runs, 1 if notify else 0, conversation_id or "", cron,
+                 0, max_attempts, backoff_sec))
             self._conn.commit()
         return self.get(job_id) or {}
 
@@ -182,7 +205,8 @@ class JobScheduler:
                 """SELECT id, name, kind, goal, schedule, interval_sec, next_run_at,
                           status, created_at, updated_at, last_run_at, last_result,
                           error, run_count, max_runs, notify, conversation_id,
-                          cron, last_fired_minute
+                          cron, last_fired_minute, attempts, max_attempts,
+                          backoff_sec
                    FROM jobs WHERE id=?""", (job_id,)).fetchone()
         return self._row(row) if row else None
 
@@ -192,14 +216,16 @@ class JobScheduler:
                 """SELECT id, name, kind, goal, schedule, interval_sec, next_run_at,
                           status, created_at, updated_at, last_run_at, last_result,
                           error, run_count, max_runs, notify, conversation_id,
-                          cron, last_fired_minute
+                          cron, last_fired_minute, attempts, max_attempts,
+                          backoff_sec
                    FROM jobs ORDER BY created_at DESC LIMIT ?""",
                 (max(1, min(limit, 200)),)).fetchall()
         return [self._row(r) for r in rows]
 
     def update(self, job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         allowed = {"name", "goal", "schedule", "interval_sec", "cron",
-                   "next_run_at", "status", "max_runs", "notify"}
+                   "next_run_at", "status", "max_runs", "notify",
+                   "attempts", "max_attempts", "backoff_sec"}
         fields = {k: v for k, v in patch.items() if k in allowed}
         if not fields:
             raise JobError("No supported fields to update.")
@@ -209,6 +235,12 @@ class JobScheduler:
         if "schedule" in fields and fields["schedule"] not in (
                 "once", "interval", "cron"):
             raise JobError("A schedule must be 'once', 'interval' or 'cron'.")
+        if fields.get("max_attempts") is not None and not 1 <= int(
+                fields["max_attempts"]) <= 20:
+            raise JobError("max_attempts must be between 1 and 20.")
+        if fields.get("backoff_sec") is not None and not 1 <= float(
+                fields["backoff_sec"]) <= 86400:
+            raise JobError("backoff_sec must be between 1 and 86400 seconds.")
         switching = fields.get("schedule")
         if "cron" in fields or switching == "cron":
             current = (self.get(job_id) or {}).get("cron")
@@ -252,7 +284,10 @@ class JobScheduler:
         if job["schedule"] == "cron" and job.get("cron"):
             # Never resume into the past: re-anchor on the calendar.
             next_at = CronExpression(job["cron"]).next_after_ts(time.time())
-        return self.update(job_id, {"status": "scheduled", "next_run_at": next_at})
+        # Resuming is the user saying "try again", so the failure count starts
+        # over rather than pausing the job again on its very next error.
+        return self.update(job_id, {"status": "scheduled", "next_run_at": next_at,
+                                    "attempts": 0})
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         job = self.get(job_id)
@@ -413,10 +448,38 @@ class JobScheduler:
         exhausted = bool(max_runs and runs >= int(max_runs))
         calendar_error = ""
 
+        failed = status == "failed"
+        # Consecutive failures. A success clears the count, so a job that fails
+        # once a month for a year never reaches the limit.
+        attempts = (int(current.get("attempts") or 0) + 1) if failed else 0
+        limit = int(job.get("max_attempts") or DEFAULT_MAX_ATTEMPTS)
+        # Only a job with a future can be retried. A one-off job that failed has
+        # nothing left to run, so it stays failed — retrying it would spend the
+        # model budget again on a task the user asked for exactly once.
+        retryable = bool(recurring or calendar) and not exhausted
+        gave_up = failed and retryable and attempts >= limit
+
         if cancelled or status == "cancelled":
             new_status = "cancelled"
             next_at = None
-        elif calendar and not exhausted and status in ("done", "failed"):
+        elif gave_up:
+            # Retrying forever is how a broken job fails silently. Stop, and
+            # say so where the user will see it.
+            new_status = "paused"
+            next_at = None
+        elif failed and retryable:
+            # Retry sooner than the next scheduled run, but never later than it.
+            retry_at = now + self._backoff(attempts, job)
+            if calendar:
+                try:
+                    retry_at = min(retry_at, self._cron(str(job["cron"])).next_after_ts(now))
+                except CronError as exc:
+                    calendar_error = str(exc)
+            elif recurring and not exhausted:
+                retry_at = min(retry_at, now + float(job["interval_sec"]))
+            new_status = "scheduled"
+            next_at = retry_at
+        elif calendar and not exhausted:
             # The calendar decides, not the finish time: a job that took four
             # minutes still fires on the next matching minute.
             try:
@@ -426,7 +489,7 @@ class JobScheduler:
                 calendar_error = str(exc)
                 new_status = "paused"
                 next_at = None
-        elif recurring and not exhausted and status in ("done", "failed"):
+        elif recurring and not exhausted:
             new_status = "scheduled"
             next_at = now + float(job["interval_sec"])
         else:
@@ -438,13 +501,24 @@ class JobScheduler:
         with self._lock:
             self._conn.execute(
                 """UPDATE jobs SET status=?, updated_at=?, last_result=?, error=?,
-                   run_count=?, next_run_at=? WHERE id=?""",
-                (new_status, now, result, error, runs, next_at, job["id"]))
+                   run_count=?, next_run_at=?, attempts=? WHERE id=?""",
+                (new_status, now, result, error, runs, next_at, attempts, job["id"]))
             self._conn.commit()
-        if job.get("notify"):
+        if gave_up:
+            # Always announced: a paused job that says nothing is the silent
+            # failure this is meant to prevent.
+            self._notify(f"{job['name']}: paused after {attempts} failed attempts",
+                         (error or "The job kept failing.")[:500], job["id"])
+        elif job.get("notify"):
             title = f"{job['name']}: {new_status}"
             body = (error or result or "The job finished.")[:500]
             self._notify(title, body, job["id"])
+
+    @staticmethod
+    def _backoff(attempts: int, job: dict[str, Any]) -> float:
+        """Exponential delay before the next attempt: base, 2x, 4x, … capped."""
+        base = float(job.get("backoff_sec") or DEFAULT_BACKOFF_SEC)
+        return min(base * (2 ** max(0, attempts - 1)), MAX_BACKOFF_SEC)
 
     def _notify(self, title: str, body: str, job_id: str) -> None:
         with self._lock:
@@ -462,4 +536,6 @@ class JobScheduler:
                 "last_run_at": row[10], "last_result": row[11], "error": row[12],
                 "run_count": row[13], "max_runs": row[14], "notify": bool(row[15]),
                 "conversation_id": row[16], "cron": row[17],
-                "last_fired_minute": row[18]}
+                "last_fired_minute": row[18], "attempts": row[19] or 0,
+                "max_attempts": row[20] or DEFAULT_MAX_ATTEMPTS,
+                "backoff_sec": row[21] or DEFAULT_BACKOFF_SEC}

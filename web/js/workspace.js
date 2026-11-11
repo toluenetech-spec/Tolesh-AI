@@ -978,6 +978,9 @@ async function renderTasks() {
         <label class="ws-field"><span>Kind</span>
           <select name="kind"><option value="agent">agent (tools)</option>
             <option value="prompt">single answer</option></select></label>
+        <label class="ws-field"><span>Max attempts</span>
+          <input name="attempts" type="number" min="1" max="20" value="3"
+            title="Consecutive failures before a recurring task pauses"></label>
       </div>
       <div class="ws-card-sub" id="wsCronPreview" role="status" aria-live="polite"></div>
       <div class="ws-row"><button class="ws-btn is-primary" type="submit">Schedule</button>
@@ -1048,6 +1051,7 @@ async function renderTasks() {
       notify: form.notify.checked,
     };
     if (body.schedule === 'interval') body.interval_sec = Number(form.interval.value);
+    body.max_attempts = Math.min(20, Math.max(1, Number(form.attempts.value) || 3));
     if (body.schedule === 'cron') {
       const expression = form.cron.value.trim();
       if (!expression) {
@@ -1093,8 +1097,12 @@ async function loadJobs(host) {
     list.appendChild(h('<div class="ws-empty">Nothing scheduled.</div>'));
   }
   for (const job of jobs.jobs) {
+    // A job paused by the failure limit is a different problem from one the
+    // user paused by hand, and it should not look like a warning.
+    const gaveUp = job.status === 'paused' && job.attempts >= job.max_attempts;
+    const retrying = job.attempts > 0 && job.status === 'scheduled';
     const kind = job.status === 'done' ? 'ok'
-      : job.status === 'failed' ? 'bad'
+      : job.status === 'failed' || gaveUp ? 'bad'
         : job.status === 'paused' ? 'warn' : '';
     const card = h(`<div class="ws-card">
       <div class="ws-card-head">
@@ -1102,9 +1110,14 @@ async function loadJobs(host) {
           <div class="ws-card-sub">${esc(job.schedule)}
             ${job.schedule === 'interval' ? `· every ${job.interval_sec}s` : ''}
             ${job.schedule === 'cron' && job.cron ? `· ${esc(job.cron)}` : ''}
-            · ${job.run_count} runs · next ${when(job.next_run_at)}</div></div>
+            · ${job.run_count} runs
+            ${job.attempts ? `· attempt ${job.attempts}/${job.max_attempts}` : ''}
+            · ${retrying ? 'retry' : 'next'} ${when(job.next_run_at)}</div></div>
         <div class="ws-row">${badge(job.status, kind)}</div>
       </div>
+      ${gaveUp ? `<div class="ws-card-sub" style="color:var(--danger)">
+        Paused after ${job.attempts} failed attempts. Resume to give it another go.
+      </div>` : ''}
       ${job.last_result || job.error
         ? `<div class="ws-card-sub">${esc((job.error || job.last_result).slice(0, 220))}</div>` : ''}
       <div class="ws-row" style="margin-top:.4rem">
