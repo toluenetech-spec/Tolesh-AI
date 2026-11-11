@@ -995,6 +995,15 @@ const voice = new VoiceController({
   onError: (msg) => ui.toast(msg, 'error'),
 });
 
+/* The microphone is released when the page goes away, and paused while it is
+   hidden: a background tab should not keep the device open, and the orb is not
+   on screen to show anything. */
+document.addEventListener('visibilitychange', () => {
+  if (!voice.meter.active) return;
+  voice.meter.setState(document.hidden ? 'paused' : 'listening');
+});
+window.addEventListener('pagehide', () => { voice.meter.stop(); });
+
 boot();
 
 /* The workspace drawer is optional chrome: if it fails to initialise, chat

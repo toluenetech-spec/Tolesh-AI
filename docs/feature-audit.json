@@ -1,5 +1,5 @@
 {
-  "generated_at": 1794379023.9355571,
+  "generated_at": 1794379868.2365623,
   "features": [
     {
       "feature": "health reports the product and version",
@@ -34,7 +34,7 @@
     {
       "feature": "create conversation",
       "ok": true,
-      "detail": "f414aee5bc21b269",
+      "detail": "974d4c176f09319b",
       "gated": false
     },
     {
@@ -82,7 +82,7 @@
     {
       "feature": "branch a conversation",
       "ok": true,
-      "detail": "new conversation 997cea8244c27286",
+      "detail": "new conversation ce47aeca2334ea6d",
       "gated": false
     },
     {
@@ -94,7 +94,7 @@
     {
       "feature": "projects: create, patch, file a conversation",
       "ok": true,
-      "detail": "project e99493b2a6fc8913 linked to the conversation",
+      "detail": "project cf4a2aa1c8954ccd linked to the conversation",
       "gated": false
     },
     {
@@ -106,7 +106,7 @@
     {
       "feature": "upload an attachment",
       "ok": true,
-      "detail": "uploaded 6a5d7ead05984f79",
+      "detail": "uploaded fb3e8ace0b3c7300",
       "gated": false
     },
     {
@@ -197,6 +197,12 @@
       "feature": "system: volume/brightness/lock are gated, shutdown still refused",
       "ok": true,
       "detail": "2/3 controls available on linux, lock needs a token, shutdown refused after approval",
+      "gated": false
+    },
+    {
+      "feature": "voice: the orb level is measured from the microphone",
+      "ok": true,
+      "detail": "analyser wired=True, level ring in markup=True",
       "gated": false
     },
     {
@@ -351,14 +357,14 @@
     }
   ],
   "summary": {
-    "passed": 54,
+    "passed": 55,
     "failed": 0,
     "gated": 4,
-    "total": 58
+    "total": 59
   },
   "routes": {
     "total": 116,
-    "visited": 103,
+    "visited": 106,
     "uncovered": [
       "/api/connectors/oauth/callback",
       "/api/connectors/oauth/complete",

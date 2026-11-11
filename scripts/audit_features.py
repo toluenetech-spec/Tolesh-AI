@@ -473,6 +473,23 @@ def main() -> int:
     check("system: volume/brightness/lock are gated, shutdown still refused",
           system_controls)
 
+    def mic_visualisation():
+        """The orb must be wired to the microphone, not to a timer."""
+        js = client.get("/js/meter.js")
+        html = client.get("/").text
+        voice = client.get("/js/voice.js").text
+        wired = ("createAnalyser" in js.text
+                 and "getFloatTimeDomainData" in js.text
+                 and "getUserMedia" in js.text
+                 and "track.stop()" in js.text)
+        ring_in_markup = 'class="orb-level"' in html
+        return (js.status_code == 200 and wired and ring_in_markup
+                and "orb-ring-2" not in html and "meter" in voice,
+                f"analyser wired={wired}, level ring in markup={ring_in_markup}")
+
+    check("voice: the orb level is measured from the microphone",
+          mic_visualisation)
+
     check("notifications are readable", lambda: (
         client.post("/api/notifications/read-all").status_code == 200,
         "mark-all-read accepted"))

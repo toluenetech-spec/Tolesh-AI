@@ -66,7 +66,7 @@ Responsive breakpoints in `app.css`: `1180px`, `980px`, `680px`, plus the
 | --- | --- | --- |
 | Shell | `.app-shell`, `.rail`, `.main`, `.topbar`, `.context` | `.context-collapsed` |
 | Navigation | `.brand`, `.brand-mark`, `.brand-word`, `.rail-nav`, `.rail-item`, `.rail-label`, `.mobile-nav` | `.is-active` |
-| Voice | `.voice-orb`, `.orb-art`, `.orb-halo`, `.orb-mic`, `.orb-ring`, `.orb-caption`, `.connection`, `.connection-dot` | `.is-listening`, `.is-online`, `.is-offline` |
+| Voice | `.voice-orb`, `.orb-art`, `.orb-halo`, `.orb-mic`, `.orb-ring`, `.orb-level`, `.orb-caption`, `.connection`, `.connection-dot` | `.is-listening`, `.is-online`, `.is-offline`, `[data-voice-state="idle\|listening\|speaking\|paused"]`, `--mic-level` (0…1, written by `meter.js`) |
 | Core | `.core-stage`, `.core`, `.core-art`, `.core-glow`, `.core-ring`, `.core-sweep`, `.core-state`, `.core-state-dot` | `body[data-core-state="idle\|thinking\|responding\|speaking\|listening\|offline"]` |
 | Model selector | `.model-selector`, `.model-trigger`, `.model-swatch`, `.model-menu`, `.model-group-label`, `.model-option`, `.opt-*` | `.is-open`, `.is-selected`, `.is-unconfigured`, `.is-on` |
 | Conversation | `.stream`, `.empty-state`, `.empty-rule`, `.empty-title`, `.empty-sub`, `.suggestions`, `.suggestion`, `.messages`, `.message`, `.avatar`, `.bubble`, `.message-meta`, `.message-body`, `.caret` | `.is-user`, `.is-assistant`, `.is-error` |

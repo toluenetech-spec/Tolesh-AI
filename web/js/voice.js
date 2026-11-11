@@ -10,10 +10,16 @@
    it reports that plainly instead of pretending to work.
 
    Voice interruption (barge-in): any recognised speech cancels current TTS.
+
+   The level display is a separate concern and lives in meter.js: it reads the
+   real microphone through an AnalyserNode, so it keeps working (and keeps
+   telling the truth) when the Web Speech API is unavailable.
 */
 
+import { MicMeter } from './meter.js';
+
 export class VoiceController {
-  constructor({ onResult, onInterim, onState, onError } = {}) {
+  constructor({ onResult, onInterim, onState, onError, meter } = {}) {
     this.onResult = onResult || (() => {});
     this.onInterim = onInterim || (() => {});
     this.onState = onState || (() => {});
@@ -23,6 +29,10 @@ export class VoiceController {
     this.wantContinuous = false;
     this.finalBuffer = [];
     this.speakOnReply = true;
+    // The level display is a separate module because it is a separate fact:
+    // it reads the microphone directly, so it stays truthful when the Web
+    // Speech API is present but its service is not reachable.
+    this.meter = meter || new MicMeter({ onError: (msg) => this.onError(msg) });
   }
 
   get supported() {
@@ -39,6 +49,11 @@ export class VoiceController {
       this.onError('Speech recognition is not available in this browser. Type instead, or use the desktop build with the native voice pipeline.');
       return;
     }
+    // Start the level display even before recognition reports anything: the
+    // microphone is open the moment the user clicks, so the orb should say so.
+    // It is also what keeps the display honest when recognition itself fails
+    // (no speech service, no network) — the meter still shows real input.
+    void this.meter.start();
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
     const rec = new Ctor();
     rec.lang = 'en-NG';            // Nigerian English; also understands Pidgin reasonably
@@ -81,6 +96,7 @@ export class VoiceController {
         try { rec.start(); } catch (_) { /* already starting */ }
       } else {
         this.active = false;
+        this.meter.stop();
         this.onState('idle');
       }
     };
@@ -98,6 +114,8 @@ export class VoiceController {
       this.recognition.onend = null;
       this.recognition = null;
     }
+    // Nothing should be holding the microphone once the session is over.
+    this.meter.stop();
     this.onState('idle');
   }
 
@@ -116,14 +134,26 @@ export class VoiceController {
     u.volume = 1;
     // Reported from the synthesiser itself, so a caller that shows "Speaking"
     // is showing audio that exists, not audio that was requested.
-    u.onstart = () => { if (typeof onStart === 'function') onStart(); };
-    u.onend = () => { if (typeof onEnd === 'function') onEnd(); };
-    u.onerror = () => { if (typeof onEnd === 'function') onEnd(); };
+    u.onstart = () => {
+      // While Tolesh talks, the microphone is still open (that is what makes
+      // barge-in possible) but its level is not shown: it would be Tolesh's
+      // own voice.
+      this.meter.setState('speaking');
+      if (typeof onStart === 'function') onStart();
+    };
+    const settled = () => {
+      this.meter.setState(this.active ? 'listening' : 'idle');
+      if (typeof onEnd === 'function') onEnd();
+    };
+    u.onend = settled;
+    u.onerror = settled;
     window.speechSynthesis.speak(u);
     return true;
   }
 
   stopSpeaking() {
     if (this.ttsSupported) window.speechSynthesis.cancel();
+    // cancel() does not reliably fire onend, so restore the meter here.
+    this.meter.setState(this.active ? 'listening' : 'idle');
   }
 }

@@ -59,15 +59,20 @@ seconds, and a pulse that never stops is not a control.
 
 | Trigger | Animation | Stops when |
 | --- | --- | --- |
-| Voice session starts | `setOrbListening(true)` — `orb-ring-2` pulse `repeat: -1`, caption and `aria-label` change | `setOrbListening(false)` calls `gsap.killTweensOf('.orb-ring-2')` and resets opacity |
+| Voice session starts | `setOrbListening(true)` — caption and `aria-label` change; `.orb-level` follows the live microphone level | `setOrbListening(false)` on stop |
 | Streaming reply | `.caret` blink (`steps(2, start)`), message `msg-in` | `finishMessage()` removes the caret |
 | Submit while streaming | `.send-btn.is-busy` spinner (`send-spin`) | Response completes |
 | Dialog / toast | `modal-in`, `toast-in`, `fade-in` | One-shot, `both` fill |
 | New context card | `animateIn(el)` — 320ms reveal | One-shot |
 | Drawer toggle | `.context` opacity/transform transition | Reaches resting state |
 
-The listening pulse is the **only** infinite animation in the app. It is
-started by an explicit user action and killed when that action ends.
+The voice ring used to pulse on an infinite GSAP loop. It no longer does:
+`web/js/meter.js` reads the microphone through an `AnalyserNode` and writes
+`--mic-level` (RMS, 0…1) on the orb, and `app.css` scales and brightens
+`.orb-level` from that value. There is no infinite animation left in the app —
+the ring is still when the room is quiet, because that is what the microphone
+reports. The level is suppressed while Tolesh speaks (the ring shows a steady
+"speaking" state instead) and held at zero while the page is hidden.
 
 ## 5. Performance rules
 

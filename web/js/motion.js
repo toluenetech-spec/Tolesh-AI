@@ -97,11 +97,8 @@ export function setOrbListening(active) {
   if (caption) caption.textContent = active ? 'Listening' : 'Voice';
   orb.setAttribute('aria-label', active ? 'Stop voice conversation' : 'Start a voice conversation');
   if (active) setCoreState('listening');
-  if (active && window.gsap && !prefersReducedMotion()) {
-    window.gsap.fromTo('.orb-ring-2', { scale: 0.85, opacity: 0.6 },
-      { scale: 1.25, opacity: 0, duration: 1.4, repeat: -1, ease: 'power1.out' });
-  } else if (window.gsap) {
-    window.gsap.killTweensOf('.orb-ring-2');
-    window.gsap.set('.orb-ring-2', { opacity: 0 });
-  }
+  // The second ring used to pulse on a fixed GSAP loop, which looked like a
+  // level but was a timer. The ring is now `.orb-level`, driven by the real
+  // microphone level (meter.js writes --mic-level, app.css scales with it), so
+  // there is nothing to animate from here.
 }

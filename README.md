@@ -309,6 +309,15 @@ actually do, so the UI never draws a switch that does nothing.
 - **Browser** (`web/js/voice.js`): real Web Speech API STT/TTS, continuous
   conversation, barge-in (speech cancels current TTS), `en-NG` language.
   Reports plainly when the API is unavailable instead of faking a waveform.
+- **Level display** (`web/js/meter.js`): `getUserMedia` → `MediaStreamSource` →
+  `AnalyserNode`, and the orb's ring is scaled and lit by the RMS of the actual
+  samples. Four states — `idle`, `listening`, `speaking`, `paused` — because
+  they mean different things: while Tolesh speaks the microphone is still open
+  (that is what makes barge-in work) but its level is hidden, and a hidden tab
+  pauses the display. Every exit path — stop, denied permission, an unplugged
+  device, `pagehide` — stops the tracks and closes the `AudioContext`. The
+  ring used to pulse on a GSAP loop; that timer is gone, and a browser test
+  proves a quiet room reads lower than a loud one.
 - **Python foundation** (inherited `src/tolesh/listening/`, `src/tolesh/output/`):
   wake-word, VAD, echo detection and Piper/Chatterbox TTS code exists from the
   upstream source. It was **not re-wired into the new server** in this pass —
