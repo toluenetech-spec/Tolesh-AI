@@ -452,6 +452,56 @@ def main() -> int:
     check("telegram: off by default, token stored encrypted, allowlist enforced",
           telegram_channel)
 
+    def security_hardening():
+        """The three things the audit fixed must stay fixed."""
+        from tolesh.channels import TelegramSettings
+        from tolesh.permissions import PermissionGate
+        from tolesh.system import SystemControls
+        from tolesh.tools_ext.computer import ComputerTools
+
+        # 1. An approval is an id, not a decision a caller can hand itself.
+        gate = PermissionGate()
+        tools = ComputerTools(
+            gate=gate,
+            controls=SystemControls(runner=lambda c: (0, "", ""),
+                                    which=lambda n: "/usr/bin/" + n,
+                                    system="linux"))
+        forged = tools.invoke("set_volume", {"level": 50},
+                              approved={"status": "approved", "risk": "elevated"})
+        pending = tools.invoke("set_volume", {"level": 10})
+        gate.approve(pending["id"], pending["token"])
+        widened = tools.invoke("set_volume", {"level": 100}, approved=pending["id"])
+        exact = tools.invoke("set_volume", {"level": 10}, approved=pending["id"])
+        binding = (forged["status"] == "refused" and widened["status"] == "refused"
+                   and exact["status"] == "ok")
+
+        # 2. Chats are isolated by default.
+        import tempfile, os
+        path = os.path.join(tempfile.mkdtemp(), "audit.db")
+        settings = TelegramSettings(path)
+        scope = settings.get()["memory_scope"]
+        settings.close()
+        isolated = scope == "chat"
+
+        # 3. The API refuses a request without the bearer token.
+        from fastapi.testclient import TestClient
+        from tolesh.server import create_app
+        from tolesh.server.app import AppState
+        guarded = AppState(in_memory=True)
+        guarded_app = create_app(state=guarded, serve_static=False,
+                                 api_token="audit-token")
+        with TestClient(guarded_app) as probe:
+            denied = probe.get("/api/conversations").status_code == 401
+            allowed = probe.get("/api/conversations", headers={
+                "Authorization": "Bearer audit-token"}).status_code == 200
+        guarded.close()
+        return (binding and isolated and denied and allowed,
+                f"approval bound={binding}, chats isolated={isolated}, "
+                f"bearer enforced={denied and allowed}")
+
+    check("security: approvals bound, chats isolated, API token enforced",
+          security_hardening)
+
     def system_controls():
         """Three controls need a token; shutdown stays refused even with one."""
         report = client.get("/api/tools/system").json()
@@ -476,6 +526,7 @@ def main() -> int:
     def mic_visualisation():
         """The orb must be wired to the microphone, not to a timer."""
         js = client.get("/js/meter.js")
+        orb = client.get("/js/orb.js")
         html = client.get("/").text
         voice = client.get("/js/voice.js").text
         wired = ("createAnalyser" in js.text
@@ -483,9 +534,17 @@ def main() -> int:
                  and "getUserMedia" in js.text
                  and "track.stop()" in js.text)
         ring_in_markup = 'class="orb-level"' in html
-        return (js.status_code == 200 and wired and ring_in_markup
-                and "orb-ring-2" not in html and "meter" in voice,
-                f"analyser wired={wired}, level ring in markup={ring_in_markup}")
+        # The sphere is drawn from the measured level: a canvas, a renderer
+        # that takes a level, and no CSS animation standing in for one.
+        particle = (orb.status_code == 200
+                    and "setLevel" in orb.text
+                    and "getContext" in orb.text
+                    and "prefers-reduced-motion" in orb.text)
+        drawn = 'id="orbField"' in html and "orb-art" not in html
+        return (js.status_code == 200 and wired and ring_in_markup and particle
+                and drawn and "orb-ring-2" not in html and "meter" in voice,
+                f"analyser wired={wired}, level ring={ring_in_markup}, "
+                f"particle field={particle}, canvas in markup={drawn}")
 
     check("voice: the orb level is measured from the microphone",
           mic_visualisation)

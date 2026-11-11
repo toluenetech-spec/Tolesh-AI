@@ -6,6 +6,7 @@ import * as api from './api.js';
 import { initWorkspace } from './workspace.js';
 import * as ui from './components.js';
 import { initMotion, animateIn, setOrbListening, setCoreState, prefersReducedMotion } from './motion.js';
+import { ParticleOrb } from './orb.js';
 import { VoiceController } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
@@ -983,9 +984,17 @@ function bindEvents() {
   $('voiceBtn').addEventListener('click', () => voice.toggle());
 }
 
+/* The orb is a particle sphere drawn from the supplied mockup. It starts
+   before the first microphone frame so the rail is never empty, and it is told
+   the truth by the meter: level in, state in, nothing invented. */
+const orb = new ParticleOrb($('orbField'));
+orb.start();
+
 const voice = new VoiceController({
   onResult: (text) => { $('input').value = ''; send(text); },
   onInterim: (text) => { $('input').value = text; },
+  onLevel: (level) => orb.setLevel(level),
+  onMicState: (s) => orb.setState(s),
   onState: (s) => {
     setOrbListening(s === 'listening');
     // Voice turning off must not overwrite "thinking" while a reply is in
@@ -1002,7 +1011,7 @@ document.addEventListener('visibilitychange', () => {
   if (!voice.meter.active) return;
   voice.meter.setState(document.hidden ? 'paused' : 'listening');
 });
-window.addEventListener('pagehide', () => { voice.meter.stop(); });
+window.addEventListener('pagehide', () => { voice.meter.stop(); orb.stop(); });
 
 boot();
 

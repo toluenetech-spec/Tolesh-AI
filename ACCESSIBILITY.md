@@ -20,7 +20,7 @@
 | --- | --- | --- | --- | --- |
 | 1 | `transition: all` is a performance/animation smell | `web/styles/app.css` | Broad transitions on interactive elements | Every transition now names explicit properties |
 | 2 | Declare `color-scheme` | `app.css` | Dark UI without `color-scheme: dark` → wrong form controls/scrollbars | Added on `html`, plus `-webkit-text-size-adjust: 100%` and `overscroll-behavior: none` |
-| 3 | Decorative icons must be hidden | `web/index.html` | Inline SVG icons announced by AT | `aria-hidden="true"` on all decorative `<svg>`, `.atmosphere`, `.grain`, `.icon-sprite`, `.brand-mark`, `.orb-ring`, `.orb-level` |
+| 3 | Decorative icons must be hidden | `web/index.html` | Inline SVG icons announced by AT | `aria-hidden="true"` on all decorative `<svg>`, `.atmosphere`, `.grain`, `.icon-sprite`, `.brand-mark`, `.orb-ring`, `.orb-level`, `.orb-field` |
 | 4 | No fake tab semantics | `index.html` | `role="tablist"` / `role="tab"` with no tabpanel and no arrow-key handling | Replaced with ordinary nav buttons carrying `aria-current="true"` |
 | 5 | Disclosure needs state | `index.html` | Context toggle had no `aria-expanded` | Added `aria-expanded="true"` and `aria-controls="contextPanel"` on `#contextToggle` |
 | 6 | Form fields need names | `index.html` | Composer `<textarea>` had no `name` | Added `name="message"`, `autocomplete="off"`, `spellcheck="true"` |

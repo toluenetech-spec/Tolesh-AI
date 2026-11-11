@@ -19,11 +19,17 @@
 import { MicMeter } from './meter.js';
 
 export class VoiceController {
-  constructor({ onResult, onInterim, onState, onError, meter } = {}) {
+  constructor({ onResult, onInterim, onState, onError, onLevel, onMicState,
+                meter } = {}) {
     this.onResult = onResult || (() => {});
     this.onInterim = onInterim || (() => {});
     this.onState = onState || (() => {});
     this.onError = onError || (() => {});
+    this.onLevel = onLevel || (() => {});
+    // The meter has its own four states; the orb draws them, and they are not
+    // the same as the recognition states (recognition can be unavailable while
+    // the microphone is open and measuring).
+    this.onMicState = onMicState || (() => {});
     this.recognition = null;
     this.active = false;
     this.wantContinuous = false;
@@ -32,12 +38,18 @@ export class VoiceController {
     // The level display is a separate module because it is a separate fact:
     // it reads the microphone directly, so it stays truthful when the Web
     // Speech API is present but its service is not reachable.
-    this.meter = meter || new MicMeter({ onError: (msg) => this.onError(msg) });
+    this.meter = meter || new MicMeter({
+      onError: (msg) => this.onError(msg),
+      onLevel: (level) => this.onLevel(level),
+      onState: (s) => this.onMicState(s),
+    });
   }
 
   get supported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
+
+
 
   get ttsSupported() {
     return 'speechSynthesis' in window;

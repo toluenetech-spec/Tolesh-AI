@@ -65,7 +65,8 @@ def make_channel(tmp_path, *, allowlist=(ALLOWED,), reply=None,
         transport or FakeTransport(), links=links,
         reply=reply or Recorder(), allowlist=lambda: set(allowlist),
         transcribe=transcribe, synthesize=synthesize,
-        new_conversation=new_conversation or (lambda title: f"conv-{title}"))
+        new_conversation=new_conversation or (
+            lambda title, project_id="": f"conv-{title}"))
     return channel
 
 
@@ -150,7 +151,7 @@ def test_new_starts_a_fresh_conversation(tmp_path):
     reply = Recorder()
     made: list[str] = []
 
-    def new_conversation(title: str) -> str:
+    def new_conversation(title: str, project_id: str = "") -> str:
         made.append(f"conv-{len(made) + 1}")
         return made[-1]
 
@@ -338,7 +339,7 @@ def test_an_empty_answer_is_replaced_with_a_notice(tmp_path):
 
 
 def test_a_failing_conversation_factory_is_reported(tmp_path):
-    def no_conversation(title):
+    def no_conversation(title, project_id=""):
         raise RuntimeError("database is closed")
 
     channel = make_channel(tmp_path, new_conversation=no_conversation)
@@ -477,7 +478,13 @@ def test_a_token_is_recognised_by_its_shape(token, ok):
 def test_settings_default_to_off_with_nobody_allowed(tmp_path):
     settings = TelegramSettings(str(tmp_path / "tg.db"))
 
-    assert settings.get() == {"enabled": False, "allowlist": []}
+    values = settings.get()
+
+    assert values["enabled"] is False
+    assert values["allowlist"] == []
+    # Isolation is the default: a second allowlisted chat must not inherit the
+    # first one's memories unless the owner opts in.
+    assert values["memory_scope"] == "chat"
 
 
 def test_settings_survive_a_new_instance(tmp_path):
@@ -490,7 +497,11 @@ def test_settings_survive_a_new_instance(tmp_path):
 
     second = TelegramSettings(path)
 
-    assert second.get() == {"enabled": True, "allowlist": [7]}
+    values = second.get()
+
+    assert values["enabled"] is True
+    assert values["allowlist"] == [7]
+    assert values["memory_scope"] == "chat"
 
 
 def test_removing_a_chat_leaves_the_others(tmp_path):

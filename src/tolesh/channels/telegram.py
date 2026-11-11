@@ -36,6 +36,11 @@ __all__ = ["TelegramError", "Transport", "HttpTransport", "FakeTransport",
 
 API_BASE = "https://api.telegram.org"
 MAX_MESSAGE_CHARS = 4000        # Telegram's own limit is 4096; leave a margin.
+# A voice note is a few hundred kilobytes. The cap exists because the size of
+# the download is decided by the remote end: without it, a compromised or
+# misbehaving bot API could make Tolesh hold an arbitrarily large body in RAM
+# before the transcriber's own 25 MB check ever runs.
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 # One connection id, so the vault holds exactly one bot token and replacing it
 # replaces rather than accumulates.
 BOT_CONNECTION_ID = "telegram:bot"
@@ -177,7 +182,13 @@ class HttpTransport(Transport):
             raise TelegramError(f"Download failed: {type(exc).__name__}") from exc
         if response.status_code != 200:
             raise TelegramError(f"Download failed ({response.status_code}).")
-        return response.content
+        declared = response.headers.get("content-length")
+        if declared and str(declared).isdigit() and int(declared) > MAX_DOWNLOAD_BYTES:
+            raise TelegramError("That voice note is larger than 20 MB.")
+        body = response.content
+        if len(body) > MAX_DOWNLOAD_BYTES:
+            raise TelegramError("That voice note is larger than 20 MB.")
+        return body
 
     def me(self) -> dict[str, Any]:
         return self._call("getMe") or {}
@@ -244,7 +255,20 @@ class TelegramLinks:
             """CREATE TABLE IF NOT EXISTS telegram_chats (
                 chat_id INTEGER PRIMARY KEY, conversation_id TEXT,
                 title TEXT, created_at REAL, updated_at REAL)""")
+        # Additive: a chat that predates project scoping simply has no project
+        # and keeps its old conversation, which is why this is a column rather
+        # than a rebuild of the table.
+        self._add_column("project_id", "TEXT")
         self._conn.commit()
+
+    def _add_column(self, name: str, kind: str) -> None:
+        # ``name`` and ``kind`` are literals written above, never network data:
+        # SQLite does not accept parameters for identifiers, so this is the only
+        # way to add a column, and the values never leave this module.
+        columns = {row[1] for row in
+                   self._conn.execute("PRAGMA table_info(telegram_chats)")}
+        if name not in columns:
+            self._conn.execute(f"ALTER TABLE telegram_chats ADD COLUMN {name} {kind}")
 
     def conversation_for(self, chat_id: int) -> str | None:
         row = self._conn.execute(
@@ -252,15 +276,24 @@ class TelegramLinks:
             (int(chat_id),)).fetchone()
         return row[0] if row else None
 
-    def link(self, chat_id: int, conversation_id: str, title: str = "") -> None:
+    def project_for(self, chat_id: int) -> str | None:
+        """The project this chat's memories and files belong to, if any."""
+        row = self._conn.execute(
+            "SELECT project_id FROM telegram_chats WHERE chat_id=?",
+            (int(chat_id),)).fetchone()
+        return (row[0] or None) if row else None
+
+    def link(self, chat_id: int, conversation_id: str, title: str = "",
+             project_id: str = "") -> None:
         now = time.time()
         self._conn.execute(
             """INSERT INTO telegram_chats (chat_id, conversation_id, title,
-                                           created_at, updated_at)
-               VALUES (?,?,?,?,?)
+                                           project_id, created_at, updated_at)
+               VALUES (?,?,?,?,?,?)
                ON CONFLICT(chat_id) DO UPDATE SET conversation_id=excluded.conversation_id,
-                 title=excluded.title, updated_at=excluded.updated_at""",
-            (int(chat_id), conversation_id, title[:120], now, now))
+                 title=excluded.title, project_id=excluded.project_id,
+                 updated_at=excluded.updated_at""",
+            (int(chat_id), conversation_id, title[:120], project_id or None, now, now))
         self._conn.commit()
 
     def reset(self, chat_id: int) -> None:
@@ -280,7 +313,8 @@ class TelegramSettings:
     table beside the chat links keeps the channel self-contained.
     """
 
-    KEYS = ("enabled", "allowlist")
+    KEYS = ("enabled", "allowlist", "memory_scope")
+    SCOPES = ("chat", "shared")
 
     def __init__(self, db_path: str = ":memory:"):
         self._conn = connect(db_path)
@@ -304,7 +338,17 @@ class TelegramSettings:
                 allowlist = [int(v) for v in raw if str(v).lstrip("-").isdigit()]
         except Exception:
             allowlist = []
-        return {"enabled": enabled, "allowlist": allowlist}
+        # Default is the isolated one. Sharing one memory across every
+        # allowlisted chat is a convenience the owner can switch on, not
+        # something a second person should receive by default.
+        scope = "chat"
+        try:
+            stored = json.loads(rows.get("memory_scope") or '"chat"')
+            if stored in self.SCOPES:
+                scope = stored
+        except Exception:
+            scope = "chat"
+        return {"enabled": enabled, "allowlist": allowlist, "memory_scope": scope}
 
     def _put(self, key: str, value: Any) -> None:
         self._conn.execute(
@@ -316,6 +360,11 @@ class TelegramSettings:
 
     def set_enabled(self, enabled: bool) -> None:
         self._put("enabled", bool(enabled))
+
+    def set_memory_scope(self, scope: str) -> None:
+        if scope not in self.SCOPES:
+            raise ValueError("Memory scope is 'chat' or 'shared'.")
+        self._put("memory_scope", scope)
 
     def set_allowlist(self, chat_ids: list[int]) -> None:
         self._put("allowlist", [int(c) for c in chat_ids])
@@ -349,7 +398,8 @@ class TelegramChannel:
                  transcribe: Callable[[bytes], str] | None = None,
                  synthesize: Callable[[str], tuple[bytes, str]] | None = None,
                  poll_timeout: float = 10.0,
-                 new_conversation: Callable[[str], str] | None = None):
+                 new_conversation: Callable[[str], str] | None = None,
+                 new_project: Callable[[str], str] | None = None):
         self.transport = transport
         self.links = links
         self._reply = reply
@@ -357,6 +407,7 @@ class TelegramChannel:
         self._transcribe = transcribe
         self._synthesize = synthesize
         self._new_conversation = new_conversation
+        self._new_project = new_project
         self._poll_timeout = max(1.0, float(poll_timeout))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -386,11 +437,18 @@ class TelegramChannel:
         self._stop.set()
         thread, self._thread = self._thread, None
         if thread is not None:
-            thread.join(timeout=self._poll_timeout + 5)
-        try:
-            self.transport.close()
-        except Exception:
-            pass
+            # A long poll is an HTTP request already in flight, so it cannot be
+            # cancelled from here; waiting for it would block shutdown for the
+            # whole poll timeout. The join is short, the transport is closed to
+            # break the socket, and the thread is a daemon that checks _stop
+            # before it handles any update — so nothing is answered after this
+            # returns, even if the request takes another second to unwind.
+            thread.join(timeout=1.5)
+            try:
+                self.transport.close()
+            except Exception:
+                pass
+            thread.join(timeout=0.5)
 
     @property
     def running(self) -> bool:
@@ -430,6 +488,13 @@ class TelegramChannel:
                     self.handle_update(update)
                 except Exception as exc:  # one bad message must not stop polling
                     self.last_error = f"{type(exc).__name__}: {exc}"
+            if not updates:
+                # A real long poll blocks for its timeout, so this never fires.
+                # But an API that answers an empty poll immediately — a proxy
+                # that strips the timeout, a token Telegram dislikes, a fake in
+                # a test — would otherwise spin this loop as fast as the socket
+                # allows: measured at ~100 polls a second on one core.
+                self._sleep(0.5)
 
     def _sleep(self, seconds: float) -> None:
         self._stop.wait(min(seconds, 60.0))
@@ -487,11 +552,21 @@ class TelegramChannel:
         if existing:
             return existing
         title = f"Telegram {chat_id}"
-        conversation_id = (self._new_conversation(title) if self._new_conversation
-                           else "")
+        # One project per chat is what keeps two allowlisted people apart: the
+        # memory store is scoped by project, so a fact learned in chat A is not
+        # even a candidate in chat B.
+        project_id = ""
+        if self._new_project is not None:
+            try:
+                project_id = self._new_project(title) or ""
+            except Exception as exc:
+                self.last_error = f"project: {exc}"
+                project_id = ""
+        conversation_id = (self._new_conversation(title, project_id)
+                           if self._new_conversation else "")
         if not conversation_id:
             raise TelegramError("No conversation could be created.")
-        self.links.link(chat_id, conversation_id, title)
+        self.links.link(chat_id, conversation_id, title, project_id)
         return conversation_id
 
     def _ask(self, chat_id: int, text: str) -> str | None:
@@ -569,7 +644,8 @@ class TelegramService:
                  transport_factory: Callable[[str], Transport] = HttpTransport,
                  transcribe: Callable[[bytes], str] | None = None,
                  synthesize: Callable[[str], tuple[bytes, str]] | None = None,
-                 new_conversation: Callable[[str], str] | None = None):
+                 new_conversation: Callable[[str, str], str] | None = None,
+                 new_project: Callable[[str], str] | None = None):
         self._links = links
         self._reply = reply
         self._allowlist = allowlist
@@ -578,6 +654,7 @@ class TelegramService:
         self._transcribe = transcribe
         self._synthesize = synthesize
         self._new_conversation = new_conversation
+        self._new_project = new_project
         self._channel: TelegramChannel | None = None
         self._lock = threading.RLock()
         self.last_error = ""
@@ -611,7 +688,8 @@ class TelegramService:
                 transport, links=self._links, reply=self._reply,
                 allowlist=self._allowlist, transcribe=self._transcribe,
                 synthesize=self._synthesize,
-                new_conversation=self._new_conversation)
+                new_conversation=self._new_conversation,
+                new_project=self._new_project)
             try:
                 channel.connected_as = str((transport.me() or {}).get("username") or "")
             except Exception as exc:
@@ -642,10 +720,14 @@ class TelegramService:
         return self.start()
 
     def stop(self) -> None:
+        # The join happens while the lock is held, so a concurrent ``start()``
+        # cannot build a second channel while the first one's thread is still
+        # draining its last long poll. Two live pollers would both fetch and
+        # both answer, and the same message would get two replies.
         with self._lock:
             channel, self._channel = self._channel, None
-        if channel is not None:
-            channel.stop()
+            if channel is not None:
+                channel.stop()
 
     def restart(self) -> dict[str, Any]:
         return self.start()

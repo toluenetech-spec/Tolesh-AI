@@ -53,7 +53,16 @@ class ComputerTools:
         return out
 
     def invoke(self, tool: str, args: dict[str, Any] | None = None,
-               *, reason: str = "", approved: dict[str, Any] | None = None) -> dict[str, Any]:
+               *, reason: str = "", approved: str | dict[str, Any] | None = None) -> dict[str, Any]:
+        """Request an action, or run one that a human already approved.
+
+        ``approved`` is an *identifier*, never a decision. A caller that could
+        pass ``{"status": "approved"}`` would be able to approve itself, and a
+        caller that could pass its own args alongside an approval could approve
+        a volume change of 10 and then run one of 100. So the gate's own stored
+        row is the only source of truth here: the id is looked up, and the tool
+        and argument set must match what was actually approved.
+        """
         args = args or {}
         if approved is None:
             decision = self.gate.request(tool, args, reason=reason)
@@ -62,8 +71,27 @@ class ComputerTools:
                 # gate's "pending" value (dict merge order matters here).
                 return {**decision, "status": "pending-confirmation"}
         else:
-            decision = approved
+            action_id = approved if isinstance(approved, str) else str(
+                approved.get("id") or "")
+            decision = self._approved_record(action_id, tool, args)
+            if decision is None:
+                return {"status": "refused", "tool": tool,
+                        "message": "No approval matches this exact action."}
         return self.execute(tool, args, risk=decision.get("risk", classify(tool, args).value))
+
+    def _approved_record(self, action_id: str, tool: str,
+                         args: dict[str, Any]) -> dict[str, Any] | None:
+        """The stored approval, or ``None`` if it does not cover this call."""
+        if not action_id:
+            return None
+        record = self.gate.status_of(action_id)
+        if record.get("status") != "approved":
+            return None
+        if record.get("tool") != tool:
+            return None
+        if _canonical(record.get("args") or {}) != _canonical(args):
+            return None
+        return record
 
     def execute(self, tool: str, args: dict[str, Any] | None = None,
                 *, risk: str = "safe") -> dict[str, Any]:
@@ -153,4 +181,16 @@ def _control_failure(tool: str, exc: ControlError) -> dict[str, Any]:
         exc.kind, "error")
     return {"status": status, "tool": tool, "message": str(exc),
             "kind": exc.kind, "utility": exc.utility}
+
+
+def _canonical(args: dict[str, Any]) -> str:
+    """Stable rendering of an argument set, for exact comparison.
+
+    ``{"level": 30}`` and ``{"level": "30"}`` are different strings on purpose:
+    the approval named one call, and a control that reads its own integer is
+    not a licence to accept a differently-typed one.
+    """
+    import json
+
+    return json.dumps(args, sort_keys=True, default=str, ensure_ascii=False)
 

@@ -23,6 +23,9 @@ class ChatRequest(BaseModel):
     web_urls: list[str] = Field(default_factory=list, max_length=5)
     web_search: bool = False
     project_id: str | None = None
+    # Channel turns set this so recall cannot reach memories that belong to a
+    # different chat. The window, the persona and the routing are unchanged.
+    memory_project_only: bool = False
     # A saved assistant contributes instructions and (optionally) a model.
     assistant_id: str | None = Field(default=None, max_length=64)
 
@@ -335,6 +338,9 @@ class TelegramPatch(BaseModel):
     add_chat: int | None = None
     remove_chat: int | None = None
     token: str | None = Field(default=None, max_length=400)
+    # "chat" keeps each chat's memories to itself; "shared" gives every
+    # allowlisted chat the same memory as the desktop app.
+    memory_scope: Literal["chat", "shared"] | None = None
 
 
 class MediaDescribe(BaseModel):

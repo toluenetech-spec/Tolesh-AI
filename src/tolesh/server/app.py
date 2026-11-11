@@ -22,6 +22,7 @@ Security notes:
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import secrets
@@ -212,7 +213,9 @@ def _messages_for(state: AppState, req: ChatRequest, conversation_id: str,
     # Retrieval, not a dump: only the memories that bear on this message are put
     # in front of the model. The whole store went into every prompt before this,
     # which got steadily worse as the store grew.
-    memory_block = state.memory_service.context_for(req.message, project_id=project_id)
+    memory_block = state.memory_service.context_for(
+        req.message, project_id=project_id,
+        strict_project=bool(getattr(req, "memory_project_only", False)))
     memory_note = "" if memory_block else state.memory_service.memory_note(
         req.message, project_id=project_id)
     system = build_system_prompt(memory_block, task=req.task,
@@ -305,7 +308,10 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
                             sig=request.query_params.get("sig")))
         if api_token and path.startswith("/api/") and not public and not signed_media:
             supplied = request.headers.get("Authorization", "")
-            if supplied != f"Bearer {api_token}":
+            # Compared in constant time: a plain ``!=`` returns as soon as two
+            # strings differ, which leaks the length of the shared prefix to
+            # anyone who can time the response.
+            if not hmac.compare_digest(supplied, f"Bearer {api_token}"):
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
@@ -648,9 +654,27 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
     if getattr(st, "telegram", None) is None:
 
         def _telegram_reply(conversation_id: str, text: str) -> str:
-            req = ChatRequest(message=text, conversation_id=conversation_id)
+            meta = st.conversations.get(conversation_id) or {}
+            project_id = meta.get("project_id") or None
+            # "chat" scope keeps each allowlisted chat inside its own project,
+            # so recall cannot surface a fact learned from someone else. The
+            # owner can switch this to "shared" when the allowlist is just
+            # their own devices and one memory across them is what they want.
+            strict = (st.telegram_settings.get()["memory_scope"] == "chat")
+            req = ChatRequest(message=text, conversation_id=conversation_id,
+                              project_id=project_id,
+                              memory_project_only=bool(strict and project_id))
             answer = _run_turn(conversation_id, req, _attach_blocks(conversation_id, req))
             return str(answer.get("text") or "")
+
+        def _telegram_project(title: str) -> str:
+            return str(st.projects.create(title, description=(
+                "Created automatically for a Telegram chat. Keeps that chat's "
+                "conversations, files and memories separate from every other "
+                "chat."))["id"])
+
+        def _telegram_conversation(title: str, project_id: str) -> str:
+            return str(st.conversations.create(title, project_id=project_id or None)["id"])
 
         def _telegram_token() -> str:
             try:
@@ -678,7 +702,8 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
             allowlist=lambda: set(st.telegram_settings.get()["allowlist"]),
             token=_telegram_token, transcribe=_telegram_transcribe,
             synthesize=_telegram_speak,
-            new_conversation=lambda title: st.conversations.create(title)["id"])
+            new_conversation=_telegram_conversation,
+            new_project=_telegram_project)
 
     # --------------------------------------------------------- conversations
     @app.get("/api/conversations")

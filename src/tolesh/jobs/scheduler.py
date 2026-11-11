@@ -25,6 +25,7 @@ What it guarantees:
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import threading
 import time
@@ -42,6 +43,25 @@ KINDS = ("agent", "prompt")
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_BACKOFF_SEC = 60.0
 MAX_BACKOFF_SEC = 3600.0
+
+# Failures that will not heal by waiting. Deliberately narrow: a false positive
+# pauses a job that would have recovered, which is worse than one wasted retry,
+# so only errors that name an authentication or existence problem are matched.
+_PERMANENT = (
+    r"\b401\b", r"\b403\b", r"\b404\b",
+    r"unauthori[sz]ed", r"forbidden", r"invalid[_ -]api[_ -]key",
+    r"authentication failed", r"permission denied",
+    r"model not found", r"unknown model", r"does not exist",
+    r"insufficient (quota|credit)", r"invalid model",
+)
+
+
+def is_permanent(error: str) -> bool:
+    """True when retrying cannot help — a revoked key, a missing model."""
+    text = (error or "").lower()
+    if not text:
+        return False
+    return any(re.search(pattern, text) for pattern in _PERMANENT)
 
 
 class JobError(RuntimeError):
@@ -63,6 +83,13 @@ class JobScheduler:
         self._running: set[str] = set()
         self._cron_cache: dict[str, CronExpression] = {}
         self._create_tables()
+        # A job is claimed by flipping its status to 'running' in a single
+        # UPDATE, which is what stops two ticks from running it twice. The
+        # price is that a process killed mid-run leaves the row 'running'
+        # forever: nothing claims it again, the UI shows work that is not
+        # happening, and the job is silently lost. A new process owns no
+        # running job, so every such row is stale by definition.
+        self.recover_interrupted()
         if autostart:
             self.start()
 
@@ -133,6 +160,52 @@ class JobScheduler:
         return parsed
 
     # ------------------------------------------------------------- lifecycle
+    def recover_interrupted(self) -> int:
+        """Reschedule jobs a previous process left mid-flight.
+
+        Counts as an attempt, so a job that takes the whole process down with
+        it cannot be restarted forever: after ``max_attempts`` interruptions it
+        is paused with the reason recorded, which is visible in the UI instead
+        of looking like a job that is still working.
+        """
+        now = time.time()
+        recovered = 0
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, schedule, cron, interval_sec, next_run_at, attempts, "
+                "max_attempts FROM jobs WHERE status='running'").fetchall()
+            for row in rows:
+                job_id = row[0]
+                attempts = int(row[5] or 0) + 1
+                limit = int(row[6] or DEFAULT_MAX_ATTEMPTS)
+                if attempts >= limit:
+                    self._conn.execute(
+                        """UPDATE jobs SET status='paused', attempts=?, error=?,
+                                  updated_at=?
+                           WHERE id=? AND status='running'""",
+                        (attempts,
+                         f"Interrupted {attempts} times by a restart. Paused "
+                         "instead of restarting it again.",
+                         now, job_id))
+                else:
+                    # next_run_at is left alone: for a recurring job it is the
+                    # moment it was due, so the missed run happens now rather
+                    # than being skipped.
+                    due = row[4] if row[4] is not None else now
+                    self._conn.execute(
+                        """UPDATE jobs SET status='scheduled', attempts=?, error=?,
+                                  next_run_at=?, updated_at=?
+                           WHERE id=? AND status='running'""",
+                        (attempts, "Interrupted by a restart; rescheduled.",
+                         min(due, now), now, job_id))
+                self._conn.execute(
+                    """UPDATE job_runs SET status='interrupted', finished_at=?,
+                              error='Tolesh stopped while this run was in flight.'
+                       WHERE job_id=? AND status='running'""", (now, job_id))
+                recovered += 1
+            self._conn.commit()
+        return recovered
+
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
@@ -457,7 +530,12 @@ class JobScheduler:
         # nothing left to run, so it stays failed — retrying it would spend the
         # model budget again on a task the user asked for exactly once.
         retryable = bool(recurring or calendar) and not exhausted
-        gave_up = failed and retryable and attempts >= limit
+        # A revoked key or a deleted model does not heal in sixty seconds.
+        # Retrying it three times with backoff spends the user's time to arrive
+        # at the same answer, so a permanent failure pauses at once and says
+        # which error was permanent.
+        permanent = failed and is_permanent(error)
+        gave_up = failed and retryable and (attempts >= limit or permanent)
 
         if cancelled or status == "cancelled":
             new_status = "cancelled"
@@ -507,7 +585,8 @@ class JobScheduler:
         if gave_up:
             # Always announced: a paused job that says nothing is the silent
             # failure this is meant to prevent.
-            self._notify(f"{job['name']}: paused after {attempts} failed attempts",
+            reason = "will not be retried" if permanent else "failed attempts"
+            self._notify(f"{job['name']}: paused after {attempts} {reason}",
                          (error or "The job kept failing.")[:500], job["id"])
         elif job.get("notify"):
             title = f"{job['name']}: {new_status}"

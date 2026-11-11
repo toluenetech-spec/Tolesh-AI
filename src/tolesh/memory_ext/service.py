@@ -345,20 +345,29 @@ class MemoryService:
 
     # ----------------------------------------------------------- retrieval
     def retrieve(self, query: str, *, project_id: str | None = None,
-                 limit: int | None = None) -> list[dict[str, Any]]:
+                 limit: int | None = None,
+                 strict_project: bool = False) -> list[dict[str, Any]]:
         if not self.retrieval_enabled or not query.strip():
             return []
         cap = limit or int(self._setting("memory_retrieval_limit", 6) or 6)
         items = self.store.active(project_id=None)
+        if strict_project and project_id:
+            # Global memories (project_id NULL) are the owner's own facts and are
+            # normally visible everywhere. On a channel that a second person can
+            # reach, "visible everywhere" means "visible to them", so the channel
+            # asks for this project's memories only.
+            items = [item for item in items if item.get("project_id") == project_id]
         picked = mretrieve.select(items, query, now=time.time(),
                                   project_id=project_id, limit=cap)
         if picked:
             self.store.mark_used([item["id"] for item in picked])
         return picked
 
-    def context_for(self, query: str, *, project_id: str | None = None) -> str:
+    def context_for(self, query: str, *, project_id: str | None = None,
+                    strict_project: bool = False) -> str:
         """The memory block for this prompt, or "" when there is nothing to say."""
-        picked = self.retrieve(query, project_id=project_id)
+        picked = self.retrieve(query, project_id=project_id,
+                               strict_project=strict_project)
         return mretrieve.format_block(picked)
 
     def memory_note(self, query: str, *, project_id: str | None = None) -> str:

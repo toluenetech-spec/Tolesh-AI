@@ -345,8 +345,25 @@ class CronExpression:
                         f"{_HORIZON_DAYS} days of {when.isoformat()}")
 
     def next_after_ts(self, timestamp: float) -> float:
-        """``next_after`` for an epoch timestamp, in local time."""
-        return self.next_after(datetime.fromtimestamp(timestamp)).timestamp()
+        """``next_after`` for an epoch timestamp, in local time.
+
+        The returned instant is guaranteed to be strictly after ``timestamp``.
+        That is not automatic: on the autumn fall-back the same wall-clock
+        minute happens twice, and a naive datetime built from its components
+        resolves to the *first* occurrence. A job that had just fired at the
+        second 01:30 would then be given a next run of the first 01:30 — an
+        instant already in the past — and would fire again immediately, in a
+        loop, until the offset changed. Walking forward until the epoch really
+        is in the future keeps the promise the name makes.
+        """
+        when = datetime.fromtimestamp(timestamp)
+        result = self.next_after(when).timestamp()
+        guard = 0
+        while result <= timestamp and guard < 240:
+            when += timedelta(minutes=1)
+            result = self.next_after(when).timestamp()
+            guard += 1
+        return result
 
     def upcoming(self, when: datetime, count: int = 3) -> list[datetime]:
         """The next ``count`` firing times — for the UI's preview."""

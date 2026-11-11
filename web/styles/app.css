@@ -146,9 +146,12 @@ ol, ul { padding: 0; list-style: none; }
 }
 .voice-orb:hover { transform: scale(1.06); }
 .voice-orb:active { transform: scale(0.97); }
-.orb-art {
+/* The particle field. Its rotation, size and brightness are drawn by orb.js
+   from the real microphone level, so there is no animation here — a CSS
+   animation would keep turning while the sphere was supposed to be still. */
+.orb-field {
   width: 100%; height: 100%; display: block; border-radius: 50%;
-  animation: core-turn 64s linear infinite;
+  pointer-events: none;
 }
 .orb-halo {
   position: absolute; inset: -10%; border-radius: 50%; pointer-events: none;
@@ -167,13 +170,12 @@ ol, ul { padding: 0; list-style: none; }
   background: radial-gradient(circle, oklch(0.11 0.012 224 / 0.62), transparent 66%);
 }
 .orb-mic .icon { position: relative; width: 20px; height: 20px; stroke-width: 1.7; filter: drop-shadow(0 1px 3px oklch(0.08 0 0 / 0.8)); }
-.voice-orb.is-listening .orb-mic { color: var(--terracotta); }
+.voice-orb.is-listening .orb-mic { color: var(--core); }
 .orb-ring {
   position: absolute; inset: -9%; border-radius: 50%;
   border: 1px solid var(--core-soft); pointer-events: none; opacity: 0;
 }
 .voice-orb.is-listening .orb-ring { opacity: 1; }
-.voice-orb.is-listening .orb-art { animation-duration: 26s; }
 
 /* The level ring. Its geometry and brightness come from the real microphone
    level, written as --mic-level (0…1) by meter.js — no keyframes, because a
@@ -181,14 +183,14 @@ ol, ul { padding: 0; list-style: none; }
    is a faint hairline; at speech it grows and glows. */
 .orb-level {
   position: absolute; inset: -9%; border-radius: 50%;
-  border: 1.5px solid var(--terracotta);
+  border: 1.5px solid var(--core);
   pointer-events: none; opacity: 0; transform: scale(0.92);
   will-change: transform, opacity;
 }
 .voice-orb[data-voice-state="listening"] .orb-level {
   opacity: calc(0.2 + var(--mic-level, 0) * 0.8);
   transform: scale(calc(0.92 + var(--mic-level, 0) * 0.4));
-  box-shadow: 0 0 calc(2px + var(--mic-level, 0) * 16px) var(--terracotta);
+  box-shadow: 0 0 calc(2px + var(--mic-level, 0) * 16px) var(--core);
 }
 /* While Tolesh speaks the microphone is still open, but what it hears is
    Tolesh. A steady ring says "speaking"; it deliberately shows no level. */
@@ -419,9 +421,8 @@ body[data-core-state="speaking"] .core-state-dot { background: var(--brass); box
 /* Offline is not a mood, it is a failure: the core stops turning and loses its
    colour rather than pretending to be alive. */
 body[data-core-state="offline"] .core-art,
-body[data-core-state="offline"] .orb-art {
+body[data-core-state="offline"] .orb-field {
   filter: grayscale(0.7) brightness(0.62);
-  animation-play-state: paused;
 }
 body[data-core-state="offline"] .core-glow,
 body[data-core-state="offline"] .orb-halo { opacity: 0.25; }
@@ -430,8 +431,6 @@ body[data-core-state="offline"] .core-state-dot { background: var(--danger); box
 
 /* The rail orb mirrors the same states: the hero is only on screen before the
    first message, and the conversation still needs a visible sign of life. */
-body[data-core-state="thinking"] .orb-art,
-body[data-core-state="responding"] .orb-art { animation-duration: 18s; }
 body[data-core-state="thinking"] .orb-halo { opacity: 1; transform: scale(1.08); }
 body[data-core-state="thinking"] .orb-ring,
 body[data-core-state="responding"] .orb-ring,

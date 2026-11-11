@@ -861,6 +861,7 @@ def _register_telegram(app: FastAPI, st: Any) -> None:
             "available": True,
             "enabled": bool(values["enabled"]),
             "allowlist": sorted(values["allowlist"]),
+            "memory_scope": values.get("memory_scope", "chat"),
             "has_token": token_present(),
             "status": status,
             "note": _telegram_note(values["enabled"], token_present(),
@@ -895,6 +896,8 @@ def _register_telegram(app: FastAPI, st: Any) -> None:
             settings.add_chat(int(body.add_chat))
         if body.remove_chat is not None:
             settings.remove_chat(int(body.remove_chat))
+        if body.memory_scope is not None:
+            settings.set_memory_scope(body.memory_scope)
         if body.enabled is not None:
             settings.set_enabled(bool(body.enabled))
             if body.enabled:

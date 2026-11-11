@@ -318,6 +318,16 @@ actually do, so the UI never draws a switch that does nothing.
   device, `pagehide` — stops the tracks and closes the `AudioContext`. The
   ring used to pulse on a GSAP loop; that timer is gone, and a browser test
   proves a quiet room reads lower than a loud one.
+- **The orb itself** (`web/js/orb.js`): the rail orb is a sphere of about 600
+  cyan particles, drawn on a canvas from the supplied neon mockup — a dense
+  dot field with a bright irregular rim. Its radius, jitter and brightness come
+  from the measured level, so a loud syllable visibly swells the sphere and
+  silence lets it settle; `speaking` and `paused` are drawn differently because
+  they are different facts. Additive blending keeps overlapping dots as light
+  rather than grey, and a pre-rendered sprite keeps 600 of them inside a frame.
+  With `prefers-reduced-motion` it stops turning and only redraws when the
+  level changes; `destroy()` ends the frame loop, which a browser test checks
+  by comparing pixels rather than by trusting a flag.
 - **Python foundation** (inherited `src/tolesh/listening/`, `src/tolesh/output/`):
   wake-word, VAD, echo detection and Piper/Chatterbox TTS code exists from the
   upstream source. It was **not re-wired into the new server** in this pass —
