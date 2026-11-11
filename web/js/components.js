@@ -461,12 +461,20 @@ export function renderUsage(container, usage) {  const nf = new Intl.NumberForma
 }
 
 export function renderTools(container, tools, { onInvoke }) {
-  container.innerHTML = tools.map((t) => `
-    <div class="tool-row" data-tool="${esc(t.name)}">
+  // A control this machine cannot perform is shown as unavailable, with the
+  // reason in the tooltip, rather than offered and then failing.
+  container.innerHTML = tools.map((t) => {
+    const blocked = t.available === false;
+    const title = t.detail ? ` title="${esc(t.detail)}"` : '';
+    return `
+    <div class="tool-row${blocked ? ' unavailable' : ''}" data-tool="${esc(t.name)}"${title}>
       <span class="tname">${esc(t.name)}</span>
       <span class="risk-tag risk-${esc(t.risk)}">${esc(t.risk)}</span>
-      <button class="invoke" data-invoke="${esc(t.name)}">${icon('arrow')}</button>
-    </div>`).join('');
+      ${blocked
+        ? '<span class="risk-tag">unavailable</span>'
+        : `<button class="invoke" data-invoke="${esc(t.name)}">${icon('arrow')}</button>`}
+    </div>`;
+  }).join('');
   container.querySelectorAll('[data-invoke]').forEach((btn) => {
     btn.addEventListener('click', () => onInvoke(btn.dataset.invoke));
   });
@@ -665,6 +673,8 @@ export function toolDialog(name) {
       open_application: `<label for="toolName">Application</label><select id="toolName" name="application">${['file-manager', 'text-editor', 'terminal', 'browser', 'calculator', 'code-editor', 'music-player'].map((a) => `<option value="${a}">${a}</option>`).join('')}</select>`,
       delete_file: `<label for="toolPath">File path</label><input id="toolPath" name="path" autocomplete="off" placeholder="e.g. ~/file.txt…" />`,
       run_command: `<label for="toolCmd">Command</label><input id="toolCmd" name="command" autocomplete="off" spellcheck="false" placeholder="e.g. echo hello…" />`,
+      set_volume: `<label for="toolLevel">Volume (0–100)</label><input id="toolLevel" name="level" type="number" min="0" max="100" step="1" value="50" />`,
+      set_brightness: `<label for="toolLevel">Brightness (0–100)</label><input id="toolLevel" name="level" type="number" min="0" max="100" step="1" value="50" />`,
     };
     const { root, close } = mountDialog(`
       <div class="modal-backdrop">
@@ -686,10 +696,19 @@ export function toolDialog(name) {
       else if (name === 'write_text_file') args = { path: val('toolPath'), content: val('toolContent') };
       else if (name === 'open_application') args = { name: val('toolName') };
       else if (name === 'run_command') args = { command: val('toolCmd') };
+      else if (name === 'set_volume' || name === 'set_brightness') {
+        const level = Number(val('toolLevel'));
+        if (!Number.isInteger(level) || level < 0 || level > 100) {
+          root.querySelector('#toolLevel').focus();
+          return;
+        }
+        args = { level };
+      }
       done(args);
       close();
     });
-    (root.querySelector('#toolPath') || root.querySelector('#toolName') || root.querySelector('#toolCmd'))?.focus();
+    (root.querySelector('#toolPath') || root.querySelector('#toolName')
+      || root.querySelector('#toolCmd') || root.querySelector('#toolLevel'))?.focus();
   });
 }
 

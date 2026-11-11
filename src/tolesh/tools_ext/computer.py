@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from ..permissions import PermissionGate, RiskLevel, TOOL_POLICY, app_command, classify, is_path_allowed
+from ..system import ControlError, SystemControls
 
 _NOT_IMPLEMENTED = {
     "delete_file", "run_command", "shutdown", "restart",
@@ -30,15 +31,26 @@ _NOT_IMPLEMENTED = {
 
 
 class ComputerTools:
-    def __init__(self, gate: PermissionGate | None = None):
+    def __init__(self, gate: PermissionGate | None = None,
+                 controls: SystemControls | None = None):
         self.gate = gate or PermissionGate()
+        # Injectable so a test can drive every platform branch, and so the
+        # controls report what this machine can do rather than what it should.
+        self.controls = controls or SystemControls()
 
     def list_tools(self) -> list[dict[str, Any]]:
-        return [
-            {"name": name, "risk": level.value,
-             "implemented": name not in _NOT_IMPLEMENTED}
-            for name, level in TOOL_POLICY.items()
-        ]
+        capabilities = self.controls.capabilities()["controls"]
+        out = []
+        for name, level in TOOL_POLICY.items():
+            entry = {"name": name, "risk": level.value,
+                     "implemented": name not in _NOT_IMPLEMENTED}
+            if name in capabilities:
+                # A control that cannot run here says so up front, instead of
+                # failing after the user has already approved it.
+                entry["available"] = capabilities[name]["supported"]
+                entry["detail"] = capabilities[name]["detail"]
+            out.append(entry)
+        return out
 
     def invoke(self, tool: str, args: dict[str, Any] | None = None,
                *, reason: str = "", approved: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -119,4 +131,26 @@ class ComputerTools:
                 return {"status": "ok", "tool": tool, "result": {"launched": exe}}
             except Exception as exc:
                 return {"status": "error", "tool": tool, "message": str(exc)}
+        if tool in ("set_volume", "set_brightness"):
+            try:
+                result = (self.controls.set_volume(args.get("level"))
+                          if tool == "set_volume"
+                          else self.controls.set_brightness(args.get("level")))
+            except ControlError as exc:
+                return _control_failure(tool, exc)
+            return result
+        if tool == "lock_screen":
+            try:
+                return self.controls.lock_screen()
+            except ControlError as exc:
+                return _control_failure(tool, exc)
         return {"status": "error", "tool": tool, "message": "Unknown tool."}
+
+
+def _control_failure(tool: str, exc: ControlError) -> dict[str, Any]:
+    """A control that could not run is reported, never reported as done."""
+    status = {"unsupported": "unsupported", "missing": "unavailable"}.get(
+        exc.kind, "error")
+    return {"status": status, "tool": tool, "message": str(exc),
+            "kind": exc.kind, "utility": exc.utility}
+

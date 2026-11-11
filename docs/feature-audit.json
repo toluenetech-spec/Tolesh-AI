@@ -1,5 +1,5 @@
 {
-  "generated_at": 1794378267.2149575,
+  "generated_at": 1794379023.9355571,
   "features": [
     {
       "feature": "health reports the product and version",
@@ -34,7 +34,7 @@
     {
       "feature": "create conversation",
       "ok": true,
-      "detail": "d9ce52ead78b0b3c",
+      "detail": "f414aee5bc21b269",
       "gated": false
     },
     {
@@ -82,7 +82,7 @@
     {
       "feature": "branch a conversation",
       "ok": true,
-      "detail": "new conversation 11f032f9e53504e1",
+      "detail": "new conversation 997cea8244c27286",
       "gated": false
     },
     {
@@ -94,7 +94,7 @@
     {
       "feature": "projects: create, patch, file a conversation",
       "ok": true,
-      "detail": "project b93ea29694e193de linked to the conversation",
+      "detail": "project e99493b2a6fc8913 linked to the conversation",
       "gated": false
     },
     {
@@ -106,7 +106,7 @@
     {
       "feature": "upload an attachment",
       "ok": true,
-      "detail": "uploaded 24a5a1d4743bfed0",
+      "detail": "uploaded 6a5d7ead05984f79",
       "gated": false
     },
     {
@@ -148,7 +148,7 @@
     {
       "feature": "agent tools are listed",
       "ok": true,
-      "detail": "17 tools",
+      "detail": "20 tools",
       "gated": false
     },
     {
@@ -194,6 +194,12 @@
       "gated": false
     },
     {
+      "feature": "system: volume/brightness/lock are gated, shutdown still refused",
+      "ok": true,
+      "detail": "2/3 controls available on linux, lock needs a token, shutdown refused after approval",
+      "gated": false
+    },
+    {
       "feature": "notifications are readable",
       "ok": true,
       "detail": "mark-all-read accepted",
@@ -220,7 +226,7 @@
     {
       "feature": "audit log records actions",
       "ok": true,
-      "detail": "3 entries",
+      "detail": "7 entries",
       "gated": false
     },
     {
@@ -232,7 +238,7 @@
     {
       "feature": "tool inventory",
       "ok": true,
-      "detail": "12 tools",
+      "detail": "15 tools",
       "gated": false
     },
     {
@@ -250,7 +256,7 @@
     {
       "feature": "usage ledger records tokens",
       "ok": true,
-      "detail": "{\"requests\": 7, \"prompt_tokens\": 5673, \"completion_tokens\": 716, \"total_tokens\": 6389, \"avg_latency_ms\": 2.9, \"errors\": ",
+      "detail": "{\"requests\": 7, \"prompt_tokens\": 5735, \"completion_tokens\": 716, \"total_tokens\": 6451, \"avg_latency_ms\": 2.7, \"errors\": ",
       "gated": false
     },
     {
@@ -310,7 +316,7 @@
     {
       "feature": "permission queues are readable",
       "ok": true,
-      "detail": "0 pending, 4 audited",
+      "detail": "0 pending, 8 audited",
       "gated": false
     },
     {
@@ -345,14 +351,14 @@
     }
   ],
   "summary": {
-    "passed": 53,
+    "passed": 54,
     "failed": 0,
     "gated": 4,
-    "total": 57
+    "total": 58
   },
   "routes": {
-    "total": 115,
-    "visited": 100,
+    "total": 116,
+    "visited": 103,
     "uncovered": [
       "/api/connectors/oauth/callback",
       "/api/connectors/oauth/complete",

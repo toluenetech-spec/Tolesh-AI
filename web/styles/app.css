@@ -726,6 +726,8 @@ body[data-core-state="speaking"] .orb-ring-1 { animation: core-ring-out 1.2s var
 .risk-consequential { color: var(--danger); background: var(--danger-12); }
 .tool-row .invoke { font-size: var(--fs-2xs); color: var(--brass); opacity: 0; transition: opacity var(--dur); }
 .tool-row:hover .invoke, .tool-row .invoke:focus-visible { opacity: 1; }
+.tool-row.unavailable { opacity: 0.55; }
+.tool-row.unavailable .tname { color: var(--muted); }
 
 /* ------------------------------------------------------------ toasts/modal */
 .toasts { position: fixed; right: var(--s-6); bottom: var(--s-6); z-index: var(--z-toast); display: flex; flex-direction: column; gap: var(--s-2); }

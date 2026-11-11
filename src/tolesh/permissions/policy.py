@@ -25,6 +25,12 @@ TOOL_POLICY: dict[str, RiskLevel] = {
     "read_text_file": RiskLevel.SAFE,
     "open_application": RiskLevel.ELEVATED,
     "write_text_file": RiskLevel.ELEVATED,
+    # Three narrow system controls. Elevated, not consequential: each changes a
+    # setting the user can see and change back, and each still needs an explicit
+    # confirmation token. Shutdown and restart stay consequential — and refused.
+    "set_volume": RiskLevel.ELEVATED,
+    "set_brightness": RiskLevel.ELEVATED,
+    "lock_screen": RiskLevel.ELEVATED,
     "delete_file": RiskLevel.CONSEQUENTIAL,
     "run_command": RiskLevel.CONSEQUENTIAL,
     "shutdown": RiskLevel.CONSEQUENTIAL,

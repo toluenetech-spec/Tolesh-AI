@@ -849,7 +849,8 @@ function forgetEverything() {
 
 async function onInvoke(name) {
   const needsArgs = ['list_directory', 'read_text_file', 'write_text_file',
-                     'open_application', 'delete_file', 'run_command'];
+                     'open_application', 'delete_file', 'run_command',
+                     'set_volume', 'set_brightness'];
   let args = {};
   if (needsArgs.includes(name)) {
     args = await ui.toolDialog(name);

@@ -250,6 +250,7 @@ tests and its own honest limits; none of them imports the interface.
 | `media/` | Image understanding (data-URL content part), configurable image generation over an OpenAI-compatible endpoint, faster-whisper transcription, Piper or `/audio/speech` synthesis. `GET /api/media/capabilities` says what is available **and why not** when it is not. |
 | `jobs/` | Background work as rows: atomic claim, worker pool, `progress` kept separate from `result`, once/interval/cron schedules (calendar matching with `L`, `W`, `#`, `%` and `@daily` macros), pause/resume/cancel/run-now, notifications. State survives a restart. |
 | `channels/` | Telegram as a second way in: long polling on its own thread (no webhook, no exposed port), a numeric chat-id allowlist checked *before* a message reaches the pipeline, one conversation per chat, text and voice notes (STT → chat → TTS). The bot token lives in the same encrypted connector vault as the OAuth tokens. Off by default. |
+| `system/` | Volume, brightness and screen lock, each `elevated` and approval-gated, with a Linux/macOS/Windows adapter. Argument lists only — no shell. A missing utility is named, with the command that installs it. |
 
 Around them: `settings/` (typed, validated, `telemetry` cannot be turned on),
 `privacy/` (one audit view over gate + MCP + agents + jobs; zip export with no
@@ -270,6 +271,15 @@ Read-only actions are audited and run immediately. **`delete_file`,
 deliberately not implemented even after approval** — see the
 `_NOT_IMPLEMENTED` set in the source. This is an honest safety boundary, not a
 missing TODO.
+
+Three narrow controls sit on the other side of that line, each `elevated` and
+each requiring an approval token: **`set_volume`**, **`set_brightness`** and
+**`lock_screen`** (`system/controls.py`). They are argument lists, never shell
+strings, built from a fixed executable and an integer validated to 0–100. Each
+has a Linux, macOS and Windows adapter; a missing utility is reported by name
+with the command that installs it, and `GET /api/tools/system` says which of
+the three works here before the user approves anything. A control that cannot
+run never reports success.
 
 ### Shared HTTP/SSE backend
 `src/tolesh/server/app.py` exposes `/api/health`, `/api/config`,

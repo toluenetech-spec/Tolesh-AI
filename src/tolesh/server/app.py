@@ -127,7 +127,7 @@ class AppState:
             mcp=self.mcp, connectors=self.connectors, attachments=self.attachments,
             conversations=self.conversations, codeexec=codeexec,
             netsearch=netsearch, artifacts=self.artifacts, media=media,
-            router=self.router)
+            router=self.router, tools=self.tools)
         self.settings = SettingsStore(db_path=path)
         # Memory is a store plus a service: the store is the table, the service
         # owns extraction, retrieval and the switches. The service is created
@@ -1033,6 +1033,20 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
     @app.get("/api/tools")
     def list_tools() -> dict[str, Any]:
         return {"tools": st.tools.list_tools()}
+
+    @app.get("/api/tools/system")
+    def system_controls() -> dict[str, Any]:
+        """Which of the three controls works on this machine, and what is missing.
+
+        Volume, brightness and lock only. Shutdown, restart and arbitrary
+        commands are not tools at all — see the refusal list in
+        ``tools_ext/computer.py``.
+        """
+        report = st.tools.controls.capabilities()
+        return {**report,
+                "refused": ["shutdown", "restart", "run_command", "delete_file",
+                            "send_message", "network_request"],
+                "note": "Each control needs an approval token before it runs."}
 
     @app.post("/api/tools/invoke")
     def invoke_tool(body: ToolInvoke) -> dict[str, Any]:

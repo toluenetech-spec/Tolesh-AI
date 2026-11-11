@@ -309,6 +309,47 @@ def build_registry(ctx: Any, *, include_connectors: bool = True) -> ToolRegistry
             args_hint="prompt: str, size?: str", risk="elevated", source="media",
             run=generate_image))
 
+    # -------------------------------------------------------- system controls
+    # Three narrow controls, each needing an approval. The tool layer never
+    # invents a fourth: there is no "run this command" tool, and there will not
+    # be one here.
+    computer = getattr(ctx, "tools", None)
+    if computer is not None:
+        def system_tool(name: str) -> Callable[[dict[str, Any], bool], ToolResult]:
+            def call(args: dict[str, Any], approved: bool = False) -> ToolResult:
+                if not approved:
+                    # The loop asks the gate before this is reached; reaching it
+                    # unapproved means something bypassed the gate.
+                    return ToolResult(
+                        text=f"{name} needs the user's approval before it runs.",
+                        ok=False, data={"needs_approval": True})
+                result = computer.execute(name, args)
+                ok = result.get("status") == "ok"
+                if ok:
+                    text = ("The screen is locked." if name == "lock_screen"
+                            else f"{name.replace('_', ' ')} is now "
+                                 f"{result.get('level')}%.")
+                else:
+                    text = str(result.get("message") or f"{name} failed.")
+                return ToolResult(text=text, data=result, ok=ok)
+            return call
+
+        registry.add(ToolSpec(
+            name="set_volume",
+            description="Set the system output volume to a percentage (0–100).",
+            args_hint="level: int", risk="elevated", source="system",
+            run=system_tool("set_volume"), needs_approval=True))
+        registry.add(ToolSpec(
+            name="set_brightness",
+            description="Set the display brightness to a percentage (0–100).",
+            args_hint="level: int", risk="elevated", source="system",
+            run=system_tool("set_brightness"), needs_approval=True))
+        registry.add(ToolSpec(
+            name="lock_screen",
+            description="Lock the screen.",
+            args_hint="", risk="elevated", source="system",
+            run=system_tool("lock_screen"), needs_approval=True))
+
     # ------------------------------------------------------------------- MCP
     mcp = getattr(ctx, "mcp", None)
     if mcp is not None:

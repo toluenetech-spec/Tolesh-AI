@@ -452,6 +452,27 @@ def main() -> int:
     check("telegram: off by default, token stored encrypted, allowlist enforced",
           telegram_channel)
 
+    def system_controls():
+        """Three controls need a token; shutdown stays refused even with one."""
+        report = client.get("/api/tools/system").json()
+        lock = client.post("/api/tools/invoke", json={"tool": "lock_screen"}).json()
+        shutdown = client.post("/api/tools/invoke", json={"tool": "shutdown"}).json()
+        # Deny the lock so this audit never actually locks the machine it runs on.
+        denied = client.post(f"/api/permissions/{lock['id']}/deny",
+                             json={"token": lock["token"], "execute": False})
+        approved = client.post(f"/api/permissions/{shutdown['id']}/approve",
+                               json={"token": shutdown["token"], "execute": True}).json()
+        supported = sum(1 for c in report["controls"].values() if c["supported"])
+        return (lock["status"] == "pending-confirmation"
+                and denied.status_code == 200
+                and approved["execution"]["status"] == "refused"
+                and "shutdown" in report["refused"],
+                f"{supported}/3 controls available on {report['platform']}, "
+                f"lock needs a token, shutdown refused after approval")
+
+    check("system: volume/brightness/lock are gated, shutdown still refused",
+          system_controls)
+
     check("notifications are readable", lambda: (
         client.post("/api/notifications/read-all").status_code == 200,
         "mark-all-read accepted"))
