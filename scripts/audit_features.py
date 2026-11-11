@@ -414,6 +414,22 @@ def main() -> int:
 
     check("jobs: a failing job pauses at the limit and notifies", failure_recovery)
 
+    def wake_word_settings():
+        body = client.get("/api/voice/hotword").json()
+        patched = client.patch("/api/voice/hotword",
+                               json={"hotword_threshold": 0.6})
+        tested = client.post("/api/voice/hotword/test").json()
+        client.patch("/api/voice/hotword", json={"hotword_threshold": 0.5})
+        refused = client.patch("/api/voice/hotword",
+                               json={"hotword_backend": "magic"})
+        return (body["values"]["hotword_enabled"] is False
+                and patched.json()["values"]["hotword_threshold"] == 0.6
+                and refused.status_code == 400,
+                f"backends={len(body['backends'])} gating={body['status']['gating']} "
+                f"probe={'ok' if tested.get('ok') else 'no backend installed'}")
+
+    check("voice: wake-word settings persist and validate", wake_word_settings)
+
     check("notifications are readable", lambda: (
         client.post("/api/notifications/read-all").status_code == 200,
         "mark-all-read accepted"))

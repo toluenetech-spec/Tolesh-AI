@@ -1645,9 +1645,10 @@ async function renderSettings() {
   const host = panel('Settings and privacy',
     'What is stored, what is sent, and how to take it with you or remove it.');
   host.innerHTML = '<div class="ws-empty">Loading…</div>';
-  const [config, media, caps] = await guard(() => Promise.all([
-    api.get('/api/settings'), api.get('/api/media/capabilities'), api.get('/api/capabilities'),
-  ])) || [{ values: {}, descriptions: {} }, {}, {}];
+  const [config, media, caps, voice] = await guard(() => Promise.all([
+    api.get('/api/settings'), api.get('/api/media/capabilities'),
+    api.get('/api/capabilities'), api.get('/api/voice/hotword'),
+  ])) || [{ values: {}, descriptions: {} }, {}, {}, {}];
 
   host.innerHTML = '';
   const values = config.values || {};
@@ -1692,6 +1693,96 @@ async function renderSettings() {
     toast(`Temperature set to ${value}.`, 'success');
   });
   host.appendChild(sampling);
+
+  /* --------------------------------------------------------------- voice */
+  const hw = (voice && voice.values) || {};
+  const hwStatus = (voice && voice.status) || {};
+  const backendOptions = ((voice && voice.backends) || []).map((b) =>
+    `<option value="${esc(b.id)}"${b.id === hw.hotword_backend ? ' selected' : ''}>`
+    + `${esc(b.label)}</option>`).join('');
+
+  const voiceCard = h(`<div><h3>Wake word</h3>
+    <label class="ws-toggle"><input type="checkbox" id="wsHotwordOn"
+      ${hw.hotword_enabled ? 'checked' : ''} />
+      <span class="ws-toggle-text"><strong>Listen for the wake word in the audio</strong>
+        <span>Off by default. When off, every utterance is transcribed and the
+          name is matched in the text, exactly as before.</span></span></label>
+    <div class="ws-row">
+      <label class="ws-field"><span>Detector</span>
+        <select id="wsHotwordBackend">${backendOptions}</select></label>
+      <label class="ws-field"><span>Model (optional)</span>
+        <input id="wsHotwordModel" value="${esc(hw.hotword_model || '')}"
+          placeholder="default model"></label>
+    </div>
+    <div class="ws-row">
+      <label class="ws-field"><span>Threshold</span>
+        <input id="wsHotwordThreshold" type="number" min="0.05" max="0.95"
+          step="0.05" value="${esc(hw.hotword_threshold)}"></label>
+      <label class="ws-field"><span>Window (s)</span>
+        <input id="wsHotwordWindow" type="number" min="0.5" max="10" step="0.5"
+          value="${esc(hw.hotword_window_sec)}"></label>
+    </div>
+    <div class="ws-row"><button class="ws-btn" id="wsHotwordTest" type="button">Test detector</button>
+      <span class="ws-card-sub">Loads the backend and scores one second of silence.</span></div>
+    <div class="ws-card-sub" id="wsHotwordStatus" style="margin-bottom:1.2rem"></div></div>`);
+
+  const voiceStatusEl = voiceCard.querySelector('#wsHotwordStatus');
+  const showVoiceStatus = (body) => {
+    const status = (body && body.status) || {};
+    if (status.gating) {
+      const backend = status.backend || {};
+      voiceStatusEl.textContent = `Gating active · ${backend.backend || 'detector'}`
+        + ` · threshold ${backend.threshold ?? hw.hotword_threshold}`
+        + ` · ${status.frames_scored} frames scored`;
+      voiceStatusEl.style.color = '';
+    } else if (status.error) {
+      voiceStatusEl.textContent = `Not gating: ${status.error}`;
+      voiceStatusEl.style.color = 'var(--danger)';
+    } else {
+      voiceStatusEl.textContent = (body && body.note)
+        || 'Not gating — every utterance is transcribed.';
+      voiceStatusEl.style.color = '';
+    }
+  };
+  showVoiceStatus(voice);
+
+  const saveVoice = async (patch) => {
+    const res = await guard(() => api.patch('/api/voice/hotword', patch));
+    if (!res) return;
+    toast('Voice settings saved.', 'success');
+    showVoiceStatus(res);
+  };
+  voiceCard.querySelector('#wsHotwordOn').addEventListener('change', (event) => {
+    saveVoice({ hotword_enabled: event.target.checked });
+  });
+  voiceCard.querySelector('#wsHotwordBackend').addEventListener('change', (event) => {
+    saveVoice({ hotword_backend: event.target.value });
+  });
+  voiceCard.querySelector('#wsHotwordModel').addEventListener('change', (event) => {
+    saveVoice({ hotword_model: event.target.value.trim() });
+  });
+  for (const [id, key] of [['#wsHotwordThreshold', 'hotword_threshold'],
+    ['#wsHotwordWindow', 'hotword_window_sec']]) {
+    voiceCard.querySelector(id).addEventListener('change', (event) => {
+      const value = Number(event.target.value);
+      if (!Number.isFinite(value)) return;
+      saveVoice({ [key]: value });
+    });
+  }
+  voiceCard.querySelector('#wsHotwordTest').addEventListener('click', async () => {
+    voiceStatusEl.style.color = '';
+    voiceStatusEl.textContent = 'Loading the detector…';
+    const result = await guard(() => api.post('/api/voice/hotword/test', {}));
+    if (!result) return;
+    if (result.ok) {
+      voiceStatusEl.textContent = `${result.backend} loaded · chunk ${result.chunk_ms} ms`
+        + ` · silence scores ${result.silence_score}`;
+    } else {
+      voiceStatusEl.textContent = result.error || 'The detector could not be loaded.';
+      voiceStatusEl.style.color = 'var(--danger)';
+    }
+  });
+  host.appendChild(voiceCard);
 
   const numbers = h(`<div><h3>Limits</h3>
     <div class="ws-row">

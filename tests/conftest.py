@@ -43,6 +43,11 @@ class MockConfig:
     llm_chat_model: str = ""
     wake_word: str = "tolesh"
     wake_aliases: list = field(default_factory=list)
+    hotword_enabled: bool = False
+    hotword_backend: str = "auto"
+    hotword_model: str = ""
+    hotword_threshold: float = 0.5
+    hotword_window_sec: float = 3.0
     whisper_model: str = "small"
     embedding_provider: str = ""
     embedding_base_url: str = ""

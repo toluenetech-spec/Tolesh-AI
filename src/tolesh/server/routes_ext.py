@@ -9,6 +9,7 @@ down, so each is guarded and reports its own availability in
 
 from __future__ import annotations
 
+import sys
 import time
 from typing import Any
 
@@ -33,6 +34,7 @@ def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_media(app, st)
     _register_jobs(app, st)
     _register_settings(app, st)
+    _register_voice(app, st)
     _register_assistants(app, st)
     _register_sharing(app, st)
     _register_editing(app, st)
@@ -688,6 +690,135 @@ def _register_jobs(app: FastAPI, st: Any) -> None:
     @app.post("/api/notifications/read-all")
     def read_all_notifications() -> dict[str, Any]:
         return {"marked": st.jobs.mark_all_read()}
+
+
+# ------------------------------------------------------------------- voice
+def _register_voice(app: FastAPI, st: Any) -> None:
+    """Wake-word settings, and a way to test the detector without speaking.
+
+    The microphone lives in the daemon, so the live listener is looked up in
+    ``sys.modules`` rather than imported: the API must keep working when the
+    server runs headless, and importing the daemon from a route would pull the
+    whole audio stack into a process that may not have one.
+    """
+    from .. import config as config_module
+    from ..listening.hotword import probe
+
+    backends = [
+        {"id": "auto", "label": "Automatic",
+         "detail": "Try openWakeWord, then Porcupine."},
+        {"id": "openwakeword", "label": "openWakeWord",
+         "detail": "Apache-2.0, no account. Needs the openwakeword package."},
+        {"id": "porcupine", "label": "Porcupine",
+         "detail": "Picovoice. Needs pvporcupine and TOLESH_PORCUPINE_KEY."},
+    ]
+
+    def live_listener() -> Any:
+        module = sys.modules.get("tolesh.daemon")
+        return getattr(module, "_global_voice_listener", None) if module else None
+
+    def current_cfg() -> Any:
+        listener = live_listener()
+        cfg = getattr(listener, "cfg", None) if listener is not None else None
+        return cfg if cfg is not None else config_module.load_settings()
+
+    def snapshot(cfg: Any) -> dict[str, Any]:
+        listener = live_listener()
+        detector = getattr(listener, "_hotword", None) if listener is not None else None
+        status = {
+            "listener_running": listener is not None,
+            "gating": detector is not None,
+            "backend": detector.status() if detector is not None else None,
+            "frames_scored": int(getattr(listener, "_hotword_scores", 0) or 0),
+            "error": str(getattr(listener, "_hotword_error", "") or ""),
+        }
+        return {
+            "values": {
+                "hotword_enabled": bool(getattr(cfg, "hotword_enabled", False)),
+                "hotword_backend": str(getattr(cfg, "hotword_backend", "auto")),
+                "hotword_model": str(getattr(cfg, "hotword_model", "") or ""),
+                "hotword_threshold": float(getattr(cfg, "hotword_threshold", 0.5)),
+                "hotword_window_sec": float(getattr(cfg, "hotword_window_sec", 3.0)),
+            },
+            "status": status,
+            "backends": backends,
+            "note": ("Gating is off, so every utterance is transcribed and the "
+                     "wake word is matched in the text." if not status["gating"]
+                     else "Only utterances containing the wake word are transcribed."),
+        }
+
+    @app.get("/api/voice/hotword")
+    def get_hotword() -> dict[str, Any]:
+        return snapshot(current_cfg())
+
+    @app.patch("/api/voice/hotword")
+    def patch_hotword(body: dict[str, Any]) -> dict[str, Any]:
+        updates: dict[str, Any] = {}
+        if "hotword_enabled" in body:
+            updates["hotword_enabled"] = bool(body["hotword_enabled"])
+        if "hotword_backend" in body:
+            backend = str(body["hotword_backend"] or "").strip().lower()
+            if backend not in ("auto", "openwakeword", "porcupine"):
+                raise HTTPException(status_code=400,
+                                    detail=f"Unknown backend: {backend!r}")
+            updates["hotword_backend"] = backend
+        if "hotword_model" in body:
+            updates["hotword_model"] = str(body["hotword_model"] or "").strip()[:200]
+        if "hotword_threshold" in body:
+            try:
+                threshold = float(body["hotword_threshold"])
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400,
+                                    detail="Threshold must be a number.") from exc
+            if not 0.05 <= threshold <= 0.95:
+                raise HTTPException(status_code=400,
+                                    detail="Threshold must be between 0.05 and 0.95.")
+            updates["hotword_threshold"] = threshold
+        if "hotword_window_sec" in body:
+            try:
+                window = float(body["hotword_window_sec"])
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400,
+                                    detail="Window must be a number.") from exc
+            if not 0.5 <= window <= 10:
+                raise HTTPException(status_code=400,
+                                    detail="Window must be between 0.5 and 10 seconds.")
+            updates["hotword_window_sec"] = window
+        if not updates:
+            raise HTTPException(status_code=400, detail="No settings to update.")
+
+        cfg = current_cfg()
+        config_module.save_overrides(updates)
+        # Settings is a frozen dataclass, so the live configuration is replaced
+        # rather than mutated — the listener then reads the new object.
+        try:
+            import dataclasses
+
+            cfg = dataclasses.replace(cfg, **updates)
+        except Exception:
+            pass
+
+        listener = live_listener()
+        if listener is not None:
+            try:
+                listener.cfg = cfg
+            except Exception:
+                pass
+        if listener is not None:
+            if getattr(listener, "_hotword", None) is not None:
+                listener._disable_hotword("settings changed")
+            listener._hotword_checked = False
+            listener._hotword_error = ""
+            if bool(getattr(cfg, "hotword_enabled", False)):
+                # Loading a model takes a moment; this is an explicit user
+                # action, so paying it here beats a surprise later.
+                listener._ensure_hotword()
+        return snapshot(cfg)
+
+    @app.post("/api/voice/hotword/test")
+    def test_hotword() -> dict[str, Any]:
+        """Load the configured backend and score one silent chunk."""
+        return probe(current_cfg())
 
 
 # ---------------------------------------------------------------- settings

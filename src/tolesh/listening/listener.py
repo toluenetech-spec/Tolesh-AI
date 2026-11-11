@@ -26,6 +26,7 @@ from .state_manager import StateManager, ListeningState
 from ..utils.audio_lock import portaudio_lock
 from ..utils.audio_capture import mono_capture, open_input_stream, resolve_input_device
 from .wake_detection import is_wake_word_detected, is_stop_command, is_stop_command_echo
+from .hotword import HotwordError, HotwordDetector, create_detector
 from .transcript_buffer import TranscriptBuffer
 from .intent_judge import (
     IntentJudge,
@@ -513,6 +514,15 @@ class VoiceListener(threading.Thread):
 
         # Audio-level wake word detection timestamp
         self._wake_timestamp: Optional[float] = None
+
+        # Audio-level wake word gate. ``_hotword`` stays None unless a backend
+        # actually loaded, and None means "transcribe everything", which is the
+        # pre-existing behaviour.
+        self._hotword: Optional[HotwordDetector] = None
+        self._hotword_checked = False
+        self._hotword_hit_at = 0.0
+        self._hotword_error = ""
+        self._hotword_scores = 0
 
         # Rolling transcript buffer for context-aware processing
         # Used for both retention and context passed to intent judge
@@ -1519,6 +1529,82 @@ class VoiceListener(threading.Thread):
             captured_tts_start_time=result.captured_tts_start_time,
         )
 
+    # ------------------------------------------------- audio wake word gate
+    @property
+    def hotword_active(self) -> bool:
+        """True only when a detector is loaded and gating is in force.
+
+        ``getattr`` because a partially constructed listener (some tests build
+        one without ``__init__``) must behave like one with no detector, not
+        raise on every frame.
+        """
+        return getattr(self, "_hotword", None) is not None
+
+    def _ensure_hotword(self) -> None:
+        """Load the configured detector once, and fall back quietly if it fails."""
+        if getattr(self, "_hotword_checked", False):
+            return
+        self._hotword_checked = True
+        if not bool(getattr(self.cfg, "hotword_enabled", False)):
+            debug_log("audio wake word is off; using transcript detection only", "voice")
+            return
+        try:
+            self._hotword = create_detector(self.cfg)
+        except HotwordError as exc:
+            # Never fatal: the transcript detector still works, so the user
+            # loses the gate, not the assistant.
+            self._hotword_error = str(exc)
+            debug_log(f"audio wake word unavailable, falling back: {exc}", "voice")
+            return
+        except Exception as exc:  # a backend must not stop the listener
+            self._hotword_error = f"{type(exc).__name__}: {exc}"
+            debug_log(f"audio wake word failed to load: {self._hotword_error}", "voice")
+            return
+        self._hotword_scores = 0
+        debug_log(f"audio wake word ready: {self._hotword.status()}", "voice")
+        print(f"  👂 Wake word detector: {self._hotword.name} "
+              f"(threshold {self._hotword.threshold:.2f})", flush=True)
+
+    def _disable_hotword(self, reason: str) -> None:
+        detector, self._hotword = getattr(self, "_hotword", None), None
+        self._hotword_error = reason
+        if detector is not None:
+            try:
+                detector.close()
+            except Exception:
+                pass
+        debug_log(f"audio wake word disabled ({reason}); transcribing everything again", "voice")
+
+    def _score_hotword(self, frame) -> None:
+        """Feed one frame to the detector. Runs on the worker, never the callback."""
+        detector = getattr(self, "_hotword", None)
+        if detector is None or np is None:
+            return
+        try:
+            stream_rate = int(getattr(self, "_stream_samplerate", self._samplerate))
+            data = frame
+            if stream_rate != detector.sample_rate:
+                data = _resample(frame, stream_rate, detector.sample_rate)
+            score = detector.feed(data)
+            self._hotword_scores += 1
+        except Exception as exc:
+            # One bad frame is enough evidence that this backend is not usable.
+            self._disable_hotword(f"{type(exc).__name__}: {exc}")
+            return
+        if score >= detector.threshold:
+            self._hotword_hit_at = time.monotonic()
+            debug_log(f"wake word heard in the audio (score={score:.2f})", "voice")
+
+    def _wake_word_in_audio(self) -> bool:
+        """Whether this utterance may be transcribed when gating is on."""
+        window = float(getattr(self.cfg, "hotword_window_sec", 3.0))
+        hit_at = getattr(self, "_hotword_hit_at", 0.0)
+        if hit_at and (time.monotonic() - hit_at) <= window:
+            return True
+        # Inside a follow-up window the user is mid-conversation and should not
+        # have to say the name again.
+        return bool(self.state_manager.is_hot_window_active())
+
     def _audio_frames(self, buf):
         """Keep native-rate frame boundaries across arbitrary callback block sizes."""
         mono = mono_capture(buf)
@@ -2340,6 +2426,7 @@ class VoiceListener(threading.Thread):
     def _start_audio_worker(self, frame_ms: int) -> None:
         if self._should_stop or self._audio_worker_thread is not None:
             return
+        self._ensure_hotword()
         self._audio_worker_thread = threading.Thread(
             target=self._run_audio_worker, args=(frame_ms,), daemon=True,
             name="tolesh-audio-frames",
@@ -2357,6 +2444,12 @@ class VoiceListener(threading.Thread):
 
     def _finish_audio_worker(self) -> None:
         self._should_stop = True
+        detector, self._hotword = getattr(self, "_hotword", None), None
+        if detector is not None:
+            try:
+                detector.close()
+            except Exception:
+                pass
         worker = self._audio_worker_thread
         if worker is None:
             return
@@ -2367,8 +2460,18 @@ class VoiceListener(threading.Thread):
         else:
             debug_log("finished audio-frame processing", "voice")
 
+    def _pre_roll_ms(self) -> int:
+        """Pre-roll length, widened when gating so the command is not clipped.
+
+        With an audio detector the wake word and the start of the command share
+        one utterance, so the buffer has to cover a spoken name (~300 ms) or the
+        command loses its first syllable.
+        """
+        ms = int(getattr(self.cfg, "vad_pre_roll_ms", 240))
+        return max(ms, 300) if self.hotword_active else ms
+
     def _consume_audio_frames(self, frame_ms: int) -> None:
-        pre_roll_ms = int(getattr(self.cfg, "vad_pre_roll_ms", 240))
+        pre_roll_ms = self._pre_roll_ms()
         endpoint_silence_ms = int(getattr(self.cfg, "endpoint_silence_ms", 800))
         max_utt_ms = int(getattr(self.cfg, "max_utterance_ms", 12000))
         tts_max_utt_ms = int(getattr(self.cfg, "tts_max_utterance_ms", 3000))
@@ -2409,6 +2512,10 @@ class VoiceListener(threading.Thread):
                 frames = self._audio_frames(item.audio)
                 audio_generation = item.generation
             for frame in frames:
+                # Score before the VAD block so a wake word that begins during
+                # pre-roll is still heard. This is the worker thread, not the
+                # audio callback, so a slow model delays transcription only.
+                self._score_hotword(frame)
                 with self._audio_state_lock:
                     if (self._should_stop or self.capture_paused
                             or audio_generation != self._audio_generation):
@@ -2504,6 +2611,14 @@ class VoiceListener(threading.Thread):
 
         if not (peak_frame_energy >= self.cfg.voice_min_energy):
             debug_log("utterance stays below the configured voice energy floor, ignoring", "voice")
+            self.state_manager.check_hot_window_expiry(self.cfg.voice_debug)
+            return
+
+        # With an audio detector loaded, an utterance that contains no wake
+        # word is dropped here — before Whisper, which is the whole point of
+        # gating on the audio rather than on the transcript.
+        if self.hotword_active and not self._wake_word_in_audio():
+            debug_log("no wake word in the audio; utterance not transcribed", "voice")
             self.state_manager.check_hot_window_expiry(self.cfg.voice_debug)
             return
 

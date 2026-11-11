@@ -183,6 +183,14 @@ class Settings:
     stop_commands: list[str]
     stop_command_fuzzy_ratio: float
 
+    # Audio-level wake word. Optional: when no backend is installed the
+    # transcript-level detector above is the whole mechanism, as before.
+    hotword_enabled: bool
+    hotword_backend: str  # "auto", "openwakeword", or "porcupine"
+    hotword_model: str
+    hotword_threshold: float
+    hotword_window_sec: float
+
     # Whisper Speech Recognition
     whisper_model: str
     whisper_backend: str  # "auto", "mlx", or "faster-whisper"
@@ -314,6 +322,23 @@ def get_config_path() -> Path:
     if xdg:
         return Path(xdg) / "tolesh" / "config.json"
     return Path.home() / ".config" / "tolesh" / "config.json"
+
+
+def save_overrides(updates: Dict[str, Any]) -> bool:
+    """Persist a few keys into the user's config file, leaving the rest alone.
+
+    Used by the voice settings endpoint: the config file is the single source
+    of truth for microphone behaviour, so a change made in the UI survives a
+    restart instead of living only in memory.
+    """
+    cfg_path = get_config_path()
+    data = _load_json(cfg_path)
+    data.update(updates)
+    try:
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return _save_json(cfg_path, data)
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -587,6 +612,14 @@ def get_default_config() -> Dict[str, Any]:
         # name while still waking on JARVIS-era words. Replaced wholesale.
         "wake_aliases": ["tolash", "tollesh", "toresh", "tolish", "talesh", "to lesh", "tolosh", "toleshh", "toles", "tolesht", "toleshie", "taresh"],
         "wake_fuzzy_ratio": 0.78,
+        # Audio-level wake word, off until a backend is installed and chosen:
+        # a gate that silently swallows commands is worse than transcribing
+        # everything.
+        "hotword_enabled": False,
+        "hotword_backend": "auto",  # "auto" tries openwakeword, then porcupine
+        "hotword_model": "",
+        "hotword_threshold": 0.5,
+        "hotword_window_sec": 3.0,
 
         # Whisper Speech Recognition
         "whisper_model": "medium",
@@ -800,6 +833,13 @@ def load_settings() -> Settings:
     wake_word = str(merged.get("wake_word", "tolesh")).strip().lower()
     wake_aliases = [a.strip().lower() for a in _ensure_list(merged.get("wake_aliases")) if a.strip()]
     wake_fuzzy_ratio = float(merged.get("wake_fuzzy_ratio", 0.78))
+    hotword_enabled = bool(merged.get("hotword_enabled", False))
+    hotword_backend = str(merged.get("hotword_backend", "auto") or "auto").strip().lower()
+    if hotword_backend not in ("auto", "openwakeword", "porcupine"):
+        hotword_backend = "auto"
+    hotword_model = str(merged.get("hotword_model", "") or "").strip()
+    hotword_threshold = max(0.05, min(0.95, float(merged.get("hotword_threshold", 0.5))))
+    hotword_window_sec = max(0.5, min(10.0, float(merged.get("hotword_window_sec", 3.0))))
     whisper_model = _expand_model_reference(merged.get("whisper_model")) or "medium"
     whisper_backend = os.environ.get("TOLESH_WHISPER_BACKEND", "").lower() or str(merged.get("whisper_backend", "auto")).lower()
     if whisper_backend not in ("auto", "mlx", "faster-whisper"):
@@ -957,6 +997,11 @@ def load_settings() -> Settings:
         wake_word=wake_word,
         wake_aliases=wake_aliases,
         wake_fuzzy_ratio=wake_fuzzy_ratio,
+        hotword_enabled=hotword_enabled,
+        hotword_backend=hotword_backend,
+        hotword_model=hotword_model,
+        hotword_threshold=hotword_threshold,
+        hotword_window_sec=hotword_window_sec,
         stop_commands=_ensure_list(merged["stop_commands"]),
         stop_command_fuzzy_ratio=float(merged["stop_command_fuzzy_ratio"]),
 

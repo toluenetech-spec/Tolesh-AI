@@ -1,5 +1,5 @@
 {
-  "generated_at": 1794376240.496265,
+  "generated_at": 1794377043.5026658,
   "features": [
     {
       "feature": "health reports the product and version",
@@ -34,7 +34,7 @@
     {
       "feature": "create conversation",
       "ok": true,
-      "detail": "2005d0add522c990",
+      "detail": "692a0e61ee7fd124",
       "gated": false
     },
     {
@@ -82,7 +82,7 @@
     {
       "feature": "branch a conversation",
       "ok": true,
-      "detail": "new conversation 63c4b0724caa9661",
+      "detail": "new conversation e61f5f17e21a9f60",
       "gated": false
     },
     {
@@ -94,7 +94,7 @@
     {
       "feature": "projects: create, patch, file a conversation",
       "ok": true,
-      "detail": "project a5d1edcc68710063 linked to the conversation",
+      "detail": "project a0fcfd67bc4704ab linked to the conversation",
       "gated": false
     },
     {
@@ -106,7 +106,7 @@
     {
       "feature": "upload an attachment",
       "ok": true,
-      "detail": "uploaded 9b93f739a2e9a22d",
+      "detail": "uploaded e22aada0c2553df8",
       "gated": false
     },
     {
@@ -179,6 +179,12 @@
       "feature": "jobs: a failing job pauses at the limit and notifies",
       "ok": true,
       "detail": "status=paused attempts=1 notified=True",
+      "gated": false
+    },
+    {
+      "feature": "voice: wake-word settings persist and validate",
+      "ok": true,
+      "detail": "backends=3 gating=False probe=no backend installed",
       "gated": false
     },
     {
@@ -333,14 +339,14 @@
     }
   ],
   "summary": {
-    "passed": 51,
+    "passed": 52,
     "failed": 0,
     "gated": 4,
-    "total": 55
+    "total": 56
   },
   "routes": {
-    "total": 108,
-    "visited": 96,
+    "total": 110,
+    "visited": 98,
     "uncovered": [
       "/api/connectors/oauth/callback",
       "/api/connectors/oauth/complete",

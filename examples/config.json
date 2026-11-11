@@ -52,6 +52,11 @@
     "taresh"
   ],
   "wake_fuzzy_ratio": 0.78,
+  "hotword_enabled": false,
+  "hotword_backend": "auto",
+  "hotword_model": "",
+  "hotword_threshold": 0.5,
+  "hotword_window_sec": 3.0,
   "whisper_model": "medium",
   "whisper_backend": "auto",
   "whisper_device": "auto",
