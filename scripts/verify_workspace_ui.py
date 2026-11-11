@@ -156,13 +156,20 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
     check["eight_tabs"] = tabs == [f"ws-tab-{t}" for t in TABS]
 
     # Every tab must render a panel, and no panel may be stuck on "Loading…".
+    # A fixed sleep turned a slow fetch into a false regression once, so poll
+    # for the panel to settle instead of guessing how long it needs.
     stuck = []
     for tab in TABS:
         page.click(f"#ws-tab-{tab}")
         page.wait_for_selector(".ws-panel", timeout=5000)
-        page.wait_for_timeout(450)
-        text = page.inner_text("#wsBody")
-        if "Loading…" in text:
+        settled = False
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            if "Loading…" not in page.inner_text("#wsBody"):
+                settled = True
+                break
+            page.wait_for_timeout(150)
+        if not settled:
             stuck.append(tab)
         shot(f"tab-{tab}")
     check["all_tabs_render"] = not stuck

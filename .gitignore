@@ -26,3 +26,6 @@ src/tolesh/_version.py
 
 # Public site build output
 _site/
+
+# Local run state: server/tunnel logs, the bearer token, the dev database.
+.run/

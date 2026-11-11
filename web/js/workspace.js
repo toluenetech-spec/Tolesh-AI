@@ -177,7 +177,11 @@ export function openWorkspace(tab) {
   document.getElementById('wsScrim').hidden = false;
   document.getElementById('wsScrim').classList.add('is-open');
   document.body.style.overflow = 'hidden';
-  if (tab) selectTab(tab);
+  // Re-render on every open, not only when a tab is named. The panel is built
+  // once at page load, so without this the drawer shows the state of the page
+  // as it was before the user's first conversation — and stale data everywhere
+  // else. Opening the drawer is a request for current data.
+  selectTab(tab || activeTab);
   drawer.querySelector('#wsClose').focus();
 }
 

@@ -89,6 +89,25 @@ Both paths share one database: `$TOLESH_DATA_DIR/tolesh.db`
 so they survive restarts and are identical whether the app or the standalone
 server wrote them.
 
+### A public URL (Cloudflare quick tunnel)
+
+```bash
+./scripts/serve_public.sh          # prints http://127.0.0.1:8787/?token=… and https://<name>.trycloudflare.com/?token=…
+./scripts/serve_public.sh --no-tunnel
+```
+
+The script starts the server, generates a bearer token once into `.run/token`,
+opens a `cloudflared` tunnel, and prints both links. **Every `/api` route needs
+that token** — the frontend reads it from `?token=` once, keeps it in
+`localStorage` and strips it from the address bar, so a link without the token
+loads the shell and then gets `401` on every request. `/api/health`, the OAuth
+callback and `/share/…` links stay public by design.
+
+What this is and is not: a quick tunnel has no SLA, gets a new hostname on every
+restart, and terminates TLS in front of a plain-HTTP local server. It is fine
+for showing someone the product for an hour. For anything that must stay up,
+use a named tunnel on your own domain and put the token in front of it.
+
 The app runs with **zero API keys**. In that state the router uses the
 deterministic `offline:tolesh-offline` engine, which is a rule-based,
 culturally-aware conversation surface — it is explicitly **not a language
