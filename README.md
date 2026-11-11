@@ -336,6 +336,7 @@ queries on `.stream`, and is measured at seven widths by
 ## Documentation index
 
 - [`docs/MEMORY.md`](docs/MEMORY.md) — how automatic memory works, what it stores, what it refuses, and its limits
+- [`docs/COMPLETION-REPORT.md`](docs/COMPLETION-REPORT.md) — what is finished, what is partial, what is not built, and the test numbers
 
 | Document | Purpose |
 | --- | --- |
