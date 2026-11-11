@@ -365,6 +365,24 @@ def main() -> int:
 
     check("jobs: schedule, pause, resume, run now, history", jobs)
 
+    def calendar_jobs():
+        preview = client.get("/api/cron/preview",
+                             params={"expression": "0 9 * * mon-fri"}).json()
+        rejected = client.get("/api/cron/preview",
+                              params={"expression": "0 9 * * funday"}).json()
+        created = client.post("/api/jobs", json={
+            "name": "audit calendar", "goal": "Reply ready.", "kind": "prompt",
+            "schedule": "cron", "cron": "0 4 * * sun"}).json()["job"]
+        client.delete(f"/api/jobs/{created['id']}")
+        next_at = created.get("next_run_at") or 0
+        return (preview.get("valid") is True and rejected.get("valid") is False
+                and created.get("cron") == "0 4 * * sun"
+                and next_at > time.time(),
+                f"{len(preview.get('next', []))} previewed runs, invalid rejected, "
+                f"next={time.strftime('%a %H:%M', time.localtime(next_at))}")
+
+    check("jobs: cron expression validates and schedules", calendar_jobs)
+
     check("notifications are readable", lambda: (
         client.post("/api/notifications/read-all").status_code == 200,
         "mark-all-read accepted"))

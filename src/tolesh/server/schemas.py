@@ -298,8 +298,10 @@ class JobCreate(BaseModel):
     name: str = Field(default="", max_length=120)
     goal: str = Field(..., min_length=1, max_length=8000)
     kind: Literal["agent", "prompt"] = "agent"
-    schedule: Literal["once", "interval"] = "once"
+    schedule: Literal["once", "interval", "cron"] = "once"
     interval_sec: float | None = Field(default=None, ge=5, le=604800)
+    cron: str | None = Field(default=None, max_length=120,
+                             description="Five-field cron expression, e.g. '0 9 * * mon-fri'.")
     run_at: float | None = None
     max_runs: int | None = Field(default=None, ge=1, le=10000)
     notify: bool = True
@@ -309,8 +311,9 @@ class JobCreate(BaseModel):
 class JobPatch(BaseModel):
     name: str | None = Field(default=None, max_length=120)
     goal: str | None = Field(default=None, max_length=8000)
-    schedule: Literal["once", "interval"] | None = None
+    schedule: Literal["once", "interval", "cron"] | None = None
     interval_sec: float | None = Field(default=None, ge=5, le=604800)
+    cron: str | None = Field(default=None, max_length=120)
     max_runs: int | None = Field(default=None, ge=1, le=10000)
     notify: bool | None = None
 

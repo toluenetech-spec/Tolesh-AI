@@ -12,7 +12,10 @@ What it guarantees:
   * every attempt leaves a row in ``job_runs`` and, if it changed anything,
     a notification;
   * a recurring job schedules its next run from the *finish* time, so a slow
-    job does not pile up behind itself.
+    job does not pile up behind itself;
+  * a calendar job ("cron") schedules its next run from the next matching
+    minute instead, because the calendar does not care when the last one
+    finished — and it cannot fire twice in the same minute.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import time
 from typing import Any, Callable
 
 from .._sqlite import connect
+from .cron import CronError, CronExpression
 
 TERMINAL = {"done", "failed", "cancelled"}
 KINDS = ("agent", "prompt")
@@ -46,6 +50,7 @@ class JobScheduler:
         self._cancels: dict[str, threading.Event] = {}
         self._thread: threading.Thread | None = None
         self._running: set[str] = set()
+        self._cron_cache: dict[str, CronExpression] = {}
         self._create_tables()
         if autostart:
             self.start()
@@ -80,7 +85,35 @@ class JobScheduler:
             columns = {r[1] for r in self._conn.execute("PRAGMA table_info(job_runs)")}
             if "progress" not in columns:
                 self._conn.execute("ALTER TABLE job_runs ADD COLUMN progress TEXT")
+            # Additive migration: calendar schedules. Existing rows keep
+            # schedule='once' or 'interval' and a NULL cron, so they behave
+            # exactly as before.
+            job_columns = {r[1] for r in self._conn.execute("PRAGMA table_info(jobs)")}
+            if "cron" not in job_columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN cron TEXT")
+            if "last_fired_minute" not in job_columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN last_fired_minute INTEGER")
             self._conn.commit()
+
+    # ------------------------------------------------------------ validation
+    @staticmethod
+    def _checked_cron(expression: str | None) -> str:
+        """Return the canonical form of ``expression``, or refuse it."""
+        if expression is None or not str(expression).strip():
+            raise JobError("A calendar schedule needs a cron expression.")
+        try:
+            return CronExpression(str(expression)).expression
+        except CronError as exc:
+            raise JobError(str(exc)) from exc
+
+    def _cron(self, expression: str) -> CronExpression:
+        parsed = self._cron_cache.get(expression)
+        if parsed is None:
+            parsed = CronExpression(expression)
+            if len(self._cron_cache) > 200:
+                self._cron_cache.clear()
+            self._cron_cache[expression] = parsed
+        return parsed
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> None:
@@ -105,6 +138,7 @@ class JobScheduler:
     # ------------------------------------------------------------------ CRUD
     def create(self, name: str, *, goal: str, kind: str = "agent",
                schedule: str = "once", interval_sec: float | None = None,
+               cron: str | None = None,
                next_run_at: float | None = None, max_runs: int | None = None,
                notify: bool = True,
                conversation_id: str | None = None) -> dict[str, Any]:
@@ -112,23 +146,33 @@ class JobScheduler:
             raise JobError("A job kind must be one of: " + ", ".join(KINDS))
         if not (goal or "").strip():
             raise JobError("A job needs a goal.")
-        if schedule not in ("once", "interval"):
-            raise JobError("A schedule must be 'once' or 'interval'.")
+        if schedule not in ("once", "interval", "cron"):
+            raise JobError("A schedule must be 'once', 'interval' or 'cron'.")
         if schedule == "interval" and (not interval_sec or interval_sec < 5):
             raise JobError("A recurring job needs an interval of at least 5 seconds.")
+        if schedule == "cron":
+            cron = self._checked_cron(cron)
+        else:
+            cron = None
         now = time.time()
         job_id = f"job-{secrets.token_hex(5)}"
-        start_at = next_run_at if next_run_at is not None else now
+        if next_run_at is not None:
+            start_at = next_run_at
+        elif schedule == "cron":
+            # The first run is the next matching minute, not "now".
+            start_at = CronExpression(cron).next_after_ts(now)
+        else:
+            start_at = now
         with self._lock:
             self._conn.execute(
                 """INSERT INTO jobs (id, name, kind, goal, schedule, interval_sec,
                     next_run_at, status, created_at, updated_at, last_run_at,
                     last_result, error, run_count, max_runs, notify,
-                    conversation_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    conversation_id, cron)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (job_id, (name or goal)[:120], kind, goal.strip(), schedule,
                  interval_sec, start_at, "scheduled", now, now, None, "", "",
-                 0, max_runs, 1 if notify else 0, conversation_id or ""))
+                 0, max_runs, 1 if notify else 0, conversation_id or "", cron))
             self._conn.commit()
         return self.get(job_id) or {}
 
@@ -137,7 +181,8 @@ class JobScheduler:
             row = self._conn.execute(
                 """SELECT id, name, kind, goal, schedule, interval_sec, next_run_at,
                           status, created_at, updated_at, last_run_at, last_result,
-                          error, run_count, max_runs, notify, conversation_id
+                          error, run_count, max_runs, notify, conversation_id,
+                          cron, last_fired_minute
                    FROM jobs WHERE id=?""", (job_id,)).fetchone()
         return self._row(row) if row else None
 
@@ -146,20 +191,37 @@ class JobScheduler:
             rows = self._conn.execute(
                 """SELECT id, name, kind, goal, schedule, interval_sec, next_run_at,
                           status, created_at, updated_at, last_run_at, last_result,
-                          error, run_count, max_runs, notify, conversation_id
+                          error, run_count, max_runs, notify, conversation_id,
+                          cron, last_fired_minute
                    FROM jobs ORDER BY created_at DESC LIMIT ?""",
                 (max(1, min(limit, 200)),)).fetchall()
         return [self._row(r) for r in rows]
 
     def update(self, job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"name", "goal", "schedule", "interval_sec", "next_run_at",
-                   "status", "max_runs", "notify"}
+        allowed = {"name", "goal", "schedule", "interval_sec", "cron",
+                   "next_run_at", "status", "max_runs", "notify"}
         fields = {k: v for k, v in patch.items() if k in allowed}
         if not fields:
             raise JobError("No supported fields to update.")
         if "status" in fields and fields["status"] not in (
                 "scheduled", "paused", "cancelled", "done"):
             raise JobError("Status must be scheduled, paused, cancelled or done.")
+        if "schedule" in fields and fields["schedule"] not in (
+                "once", "interval", "cron"):
+            raise JobError("A schedule must be 'once', 'interval' or 'cron'.")
+        switching = fields.get("schedule")
+        if "cron" in fields or switching == "cron":
+            current = (self.get(job_id) or {}).get("cron")
+            expression = fields.get("cron", current)
+            if expression is None:
+                raise JobError("A calendar schedule needs a cron expression.")
+            fields["cron"] = self._checked_cron(expression)
+            if "next_run_at" not in fields:
+                # The next run comes from the calendar, never from "now".
+                fields["next_run_at"] = CronExpression(fields["cron"]).next_after_ts(
+                    time.time())
+        elif switching in ("once", "interval"):
+            fields["cron"] = None
         fields["updated_at"] = time.time()
         with self._lock:
             if self.get(job_id) is None:
@@ -186,8 +248,11 @@ class JobScheduler:
             raise JobError("Unknown job.")
         if job["status"] in TERMINAL and job["schedule"] == "once":
             raise JobError("This one-off job already finished; create a new one.")
-        return self.update(job_id, {"status": "scheduled",
-                                    "next_run_at": job["next_run_at"] or time.time()})
+        next_at = job["next_run_at"] or time.time()
+        if job["schedule"] == "cron" and job.get("cron"):
+            # Never resume into the past: re-anchor on the calendar.
+            next_at = CronExpression(job["cron"]).next_after_ts(time.time())
+        return self.update(job_id, {"status": "scheduled", "next_run_at": next_at})
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         job = self.get(job_id)
@@ -201,7 +266,15 @@ class JobScheduler:
         job = self.get(job_id)
         if job is None:
             raise JobError("Unknown job.")
-        return self.update(job_id, {"status": "scheduled", "next_run_at": time.time()})
+        result = self.update(job_id, {"status": "scheduled",
+                                      "next_run_at": time.time()})
+        # An explicit run is not a scheduler tick, so it may fire in a minute
+        # the scheduler already used.
+        with self._lock:
+            self._conn.execute(
+                "UPDATE jobs SET last_fired_minute=NULL WHERE id=?", (job_id,))
+            self._conn.commit()
+        return result
 
     # ------------------------------------------------------------------ runs
     def runs(self, job_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -260,18 +333,26 @@ class JobScheduler:
 
     def _claim(self) -> dict[str, Any] | None:
         now = time.time()
+        minute = int(now // 60)
         with self._lock:
+            # A calendar job that already fired in this minute is not due again,
+            # however many ticks the loop manages inside it.
             row = self._conn.execute(
-                """SELECT id FROM jobs WHERE status='scheduled' AND next_run_at<=?
-                   ORDER BY next_run_at ASC LIMIT 1""", (now,)).fetchone()
+                """SELECT id FROM jobs
+                   WHERE status='scheduled' AND next_run_at<=?
+                     AND (schedule<>'cron' OR last_fired_minute IS NULL
+                          OR last_fired_minute<>?)
+                   ORDER BY next_run_at ASC LIMIT 1""", (now, minute)).fetchone()
             if row is None:
                 return None
             job_id = row[0]
             if job_id in self._running:
                 return None
             updated = self._conn.execute(
-                """UPDATE jobs SET status='running', last_run_at=?, updated_at=?
-                   WHERE id=? AND status='scheduled'""", (now, now, job_id))
+                """UPDATE jobs SET status='running', last_run_at=?, updated_at=?,
+                          last_fired_minute=?
+                   WHERE id=? AND status='scheduled'""",
+                (now, now, minute, job_id))
             self._conn.commit()
             if updated.rowcount != 1:
                 return None
@@ -327,18 +408,32 @@ class JobScheduler:
             current = self.get(job["id"]) or {}
         cancelled = current.get("status") == "cancelled"
         recurring = job.get("schedule") == "interval" and job.get("interval_sec")
+        calendar = job.get("schedule") == "cron" and job.get("cron")
         max_runs = job.get("max_runs")
         exhausted = bool(max_runs and runs >= int(max_runs))
+        calendar_error = ""
 
         if cancelled or status == "cancelled":
             new_status = "cancelled"
             next_at = None
+        elif calendar and not exhausted and status in ("done", "failed"):
+            # The calendar decides, not the finish time: a job that took four
+            # minutes still fires on the next matching minute.
+            try:
+                next_at = self._cron(str(job["cron"])).next_after_ts(now)
+                new_status = "scheduled"
+            except CronError as exc:
+                calendar_error = str(exc)
+                new_status = "paused"
+                next_at = None
         elif recurring and not exhausted and status in ("done", "failed"):
             new_status = "scheduled"
             next_at = now + float(job["interval_sec"])
         else:
             new_status = status if status in ("done", "failed") else "done"
             next_at = None
+        if calendar_error:
+            error = (error + " " if error else "") + calendar_error
 
         with self._lock:
             self._conn.execute(
@@ -366,4 +461,5 @@ class JobScheduler:
                 "status": row[7], "created_at": row[8], "updated_at": row[9],
                 "last_run_at": row[10], "last_result": row[11], "error": row[12],
                 "run_count": row[13], "max_runs": row[14], "notify": bool(row[15]),
-                "conversation_id": row[16]}
+                "conversation_id": row[16], "cron": row[17],
+                "last_fired_minute": row[18]}

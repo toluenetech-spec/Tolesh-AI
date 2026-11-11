@@ -590,7 +590,7 @@ def _register_jobs(app: FastAPI, st: Any) -> None:
             job = st.jobs.create(
                 body.name or body.goal[:60], goal=body.goal, kind=body.kind,
                 schedule=body.schedule, interval_sec=body.interval_sec,
-                next_run_at=body.run_at, max_runs=body.max_runs,
+                cron=body.cron, next_run_at=body.run_at, max_runs=body.max_runs,
                 notify=body.notify, conversation_id=body.conversation_id)
         except JobError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -650,6 +650,26 @@ def _register_jobs(app: FastAPI, st: Any) -> None:
         if st.jobs.get(job_id) is None:
             raise HTTPException(status_code=404, detail="Unknown job.")
         return {"runs": st.jobs.runs(job_id, limit=limit)}
+
+    @app.get("/api/cron/preview")
+    def cron_preview(expression: str = "") -> dict[str, Any]:
+        """Validate an expression and show when it would next fire.
+
+        Used by the task form so a typo is caught before the job is saved, and
+        so the next run can be shown in the user's own timezone.
+        """
+        from datetime import datetime
+
+        from ..jobs.cron import CronError, CronExpression
+        try:
+            parsed = CronExpression(expression)
+        except CronError as exc:
+            return {"valid": False, "expression": expression, "error": str(exc),
+                    "next": [], "next_local": []}
+        upcoming = parsed.upcoming(datetime.now(), count=3)
+        return {"valid": True, "expression": parsed.expression, "error": None,
+                "next": [d.timestamp() for d in upcoming],
+                "next_local": [d.strftime("%Y-%m-%d %H:%M") for d in upcoming]}
 
     @app.get("/api/notifications")
     def list_notifications(unread: bool = False) -> dict[str, Any]:

@@ -248,7 +248,7 @@ tests and its own honest limits; none of them imports the interface.
 | `agents/` | A bounded loop: one fenced `action` block or a `final` per turn, observations fed back inside `<tool_result>` and labelled as data, `agent_max_steps` enforced, cancellation between steps, every run persisted. Approving a write grants **that exact call** and nothing else. |
 | `artifacts/` | Table profiling, five chart types (matplotlib `Agg`), escaped HTML reports, and a store with 0600 files and a download route. The sandbox seeds input files and collects named outputs, so "clean this CSV and save it" works end to end. |
 | `media/` | Image understanding (data-URL content part), configurable image generation over an OpenAI-compatible endpoint, faster-whisper transcription, Piper or `/audio/speech` synthesis. `GET /api/media/capabilities` says what is available **and why not** when it is not. |
-| `jobs/` | Background work as rows: atomic claim, worker pool, `progress` kept separate from `result`, once/interval schedules, pause/resume/cancel/run-now, notifications. State survives a restart. |
+| `jobs/` | Background work as rows: atomic claim, worker pool, `progress` kept separate from `result`, once/interval/cron schedules (calendar matching with `L`, `W`, `#`, `%` and `@daily` macros), pause/resume/cancel/run-now, notifications. State survives a restart. |
 
 Around them: `settings/` (typed, validated, `telemetry` cannot be turned on),
 `privacy/` (one audit view over gate + MCP + agents + jobs; zip export with no

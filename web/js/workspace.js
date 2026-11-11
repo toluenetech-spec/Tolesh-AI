@@ -968,13 +968,18 @@ async function renderTasks() {
       <div class="ws-row">
         <label class="ws-field"><span>Schedule</span>
           <select name="schedule"><option value="once">once</option>
-            <option value="interval">recurring</option></select></label>
-        <label class="ws-field"><span>Every (seconds)</span>
+            <option value="interval">recurring</option>
+            <option value="cron">calendar (cron)</option></select></label>
+        <label class="ws-field" id="wsIntervalField"><span>Every (seconds)</span>
           <input name="interval" type="number" min="5" value="3600"></label>
+        <label class="ws-field" id="wsCronField" hidden><span>Cron expression</span>
+          <input name="cron" placeholder="0 9 * * mon-fri" autocomplete="off"
+            spellcheck="false"></label>
         <label class="ws-field"><span>Kind</span>
           <select name="kind"><option value="agent">agent (tools)</option>
             <option value="prompt">single answer</option></select></label>
       </div>
+      <div class="ws-card-sub" id="wsCronPreview" role="status" aria-live="polite"></div>
       <div class="ws-row"><button class="ws-btn is-primary" type="submit">Schedule</button>
         <label class="ws-card-sub"><input type="checkbox" name="notify" checked> notify me</label></div>
     </form>
@@ -984,7 +989,56 @@ async function renderTasks() {
     <div class="ws-row"><button class="ws-btn" id="wsReadAll" type="button">Mark all read</button></div>
     <div id="wsNotes"><div class="ws-empty">Loading…</div></div>`;
 
-  host.querySelector('#wsTaskForm').addEventListener('submit', async (event) => {
+  const taskForm = host.querySelector('#wsTaskForm');
+  const cronPreview = host.querySelector('#wsCronPreview');
+  const intervalField = host.querySelector('#wsIntervalField');
+  const cronField = host.querySelector('#wsCronField');
+  // Whether the expression currently typed parses. Set by the debounced check
+  // below, so the form does not have to guess and the server stays the judge.
+  let cronState = { expression: '', valid: false };
+
+  const syncScheduleFields = () => {
+    const mode = taskForm.schedule.value;
+    intervalField.hidden = mode !== 'interval';
+    cronField.hidden = mode !== 'cron';
+    if (mode !== 'cron') {
+      cronPreview.textContent = '';
+      cronPreview.style.color = '';
+    } else if (taskForm.cron.value.trim()) {
+      checkCron(taskForm.cron.value.trim());
+    }
+  };
+
+  let cronTimer = null;
+  async function checkCron(expression) {
+    const res = await guard(() => api.get(
+      `/api/cron/preview?expression=${encodeURIComponent(expression)}`));
+    if (!res) return;
+    if (taskForm.cron.value.trim() !== expression) return;  // a later keystroke won
+    cronState = { expression, valid: !!res.valid };
+    if (res.valid) {
+      cronPreview.textContent = `Next: ${res.next_local.join('  ·  ')}`;
+      cronPreview.style.color = '';
+    } else {
+      cronPreview.textContent = res.error;
+      cronPreview.style.color = 'var(--danger)';
+    }
+  }
+
+  taskForm.schedule.addEventListener('change', syncScheduleFields);
+  taskForm.cron.addEventListener('input', () => {
+    clearTimeout(cronTimer);
+    const expression = taskForm.cron.value.trim();
+    if (!expression) {
+      cronPreview.textContent = '';
+      cronState = { expression: '', valid: false };
+      return;
+    }
+    cronTimer = setTimeout(() => checkCron(expression), 250);
+  });
+  syncScheduleFields();
+
+  taskForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.target;
     const body = {
@@ -994,6 +1048,18 @@ async function renderTasks() {
       notify: form.notify.checked,
     };
     if (body.schedule === 'interval') body.interval_sec = Number(form.interval.value);
+    if (body.schedule === 'cron') {
+      const expression = form.cron.value.trim();
+      if (!expression) {
+        toast('Enter a cron expression, for example 0 9 * * mon-fri.', 'error');
+        return;
+      }
+      if (!cronState.valid || cronState.expression !== expression) {
+        toast('That cron expression is not valid yet.', 'error');
+        return;
+      }
+      body.cron = expression;
+    }
     if (!body.goal) {
       toast('Describe the task first.', 'error');
       return;
@@ -1002,6 +1068,8 @@ async function renderTasks() {
     if (res) {
       toast('Task scheduled.', 'success');
       form.reset();
+      cronState = { expression: '', valid: false };
+      syncScheduleFields();
       loadJobs(host);
     }
   });
@@ -1033,6 +1101,7 @@ async function loadJobs(host) {
         <div><div class="ws-card-title">${esc(job.name)}</div>
           <div class="ws-card-sub">${esc(job.schedule)}
             ${job.schedule === 'interval' ? `· every ${job.interval_sec}s` : ''}
+            ${job.schedule === 'cron' && job.cron ? `· ${esc(job.cron)}` : ''}
             · ${job.run_count} runs · next ${when(job.next_run_at)}</div></div>
         <div class="ws-row">${badge(job.status, kind)}</div>
       </div>
