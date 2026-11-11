@@ -57,15 +57,16 @@ export class VoiceController {
 
   start() {
     if (this.active) return;
+    // The level display does not depend on the speech service, so the
+    // microphone opens first. Clicking the orb in a browser without
+    // SpeechRecognition used to return before the meter started, which left
+    // the orb inert and contradicted the promise below; now the user gets a
+    // live level and a sentence explaining the missing engine.
+    void this.meter.start();
     if (!this.supported) {
-      this.onError('Speech recognition is not available in this browser. Type instead, or use the desktop build with the native voice pipeline.');
+      this.onError('Speech recognition is not available in this browser. The microphone level still works. Type instead, or use the desktop build with the native voice pipeline.');
       return;
     }
-    // Start the level display even before recognition reports anything: the
-    // microphone is open the moment the user clicks, so the orb should say so.
-    // It is also what keeps the display honest when recognition itself fails
-    // (no speech service, no network) — the meter still shows real input.
-    void this.meter.start();
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
     const rec = new Ctor();
     rec.lang = 'en-NG';            // Nigerian English; also understands Pidgin reasonably
@@ -132,7 +133,9 @@ export class VoiceController {
   }
 
   toggle() {
-    if (this.active) this.stop(); else this.start();
+    // A browser with no recognition engine can still be listening to the
+    // microphone, so "active" is not the only thing that keeps the orb alive.
+    if (this.active || this.meter.active) this.stop(); else this.start();
   }
 
   speak(text, { onStart, onEnd } = {}) {

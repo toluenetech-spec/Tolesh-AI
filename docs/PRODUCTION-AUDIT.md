@@ -159,7 +159,21 @@ notification says "will not be retried" rather than "failed attempts". The
 patterns are narrow on purpose: a false positive pauses a job that would have
 recovered, which is worse than one wasted retry.
 
-### 2.4 Shutdown waited for a whole long poll
+### 2.4 The orb was inert in a browser without speech recognition
+
+`VoiceController.start()` returned as soon as `SpeechRecognition` was absent,
+*before* opening the microphone — so in Firefox, or any Chromium build without
+the speech service, clicking the orb produced an error toast and a still sphere.
+The comment directly below claimed the meter "still shows real input"; it did
+not.
+
+**Fixed**: the microphone opens first, then the missing engine is reported. The
+level display keeps working, and the same click stops it again (`toggle()` now
+checks the meter as well as the recognition session). Regression test drives a
+controller with the API deleted and asserts the meter started, the error was
+reported, and the second click released the device.
+
+### 2.5 Shutdown waited for a whole long poll
 
 `TelegramChannel.stop()` joined with `poll_timeout + 5` seconds — up to 15 s of
 apparent freeze when quitting while the bot was running. An HTTP request in
@@ -215,7 +229,7 @@ frame to Whisper.
 
 ## 5. Tests added
 
-81 new tests, all of which fail against the pre-audit code where applicable.
+82 new tests, all of which fail against the pre-audit code where applicable.
 
 | File | Tests | Covers |
 | --- | --- | --- |
@@ -223,11 +237,11 @@ frame to Whisper.
 | `tests/test_jobs_reliability.py` | 22 | concurrent ticks, crash recovery, crash-loop pause, missed runs, long jobs, month/year/leap boundaries, DST, permanent errors, retry persistence |
 | `tests/test_lifecycle.py` | 9 | thread counts, duplicate workers, shutdown latency, no reply after stop, disabled detector costs nothing, gate cheaper than real time |
 | `tests/test_migrations.py` | 13 | legacy schema, idempotent migration, data survival, concurrent updates, integrity check |
-| `tests/test_orb.py` | 8 | particles not a disc, level→brightness, four states, reduced motion, `destroy()`, accessibility |
+| `tests/test_orb.py` | 9 | particles not a disc, level→brightness, four states, reduced motion, `destroy()`, accessibility |
 
 Final results:
 
-* full suite — **6556 passed, 27 skipped, 2 deselected, 0 failed** (7 m 16 s)
+* full suite — **6557 passed, 27 skipped, 2 deselected, 0 failed**
 * feature audit — **56 passed, 0 failed, 4 gated** (`docs/feature-audit.json`)
 
 ---

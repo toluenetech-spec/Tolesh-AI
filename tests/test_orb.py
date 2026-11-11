@@ -262,3 +262,49 @@ def test_destroy_stops_the_frame_loop(page):
     # "the animation frame loop ended".
     assert (later["lit"], later["light"]) == (after["lit"], after["light"]), \
         "the orb is still animating after destroy()"
+
+
+def test_the_microphone_opens_even_when_speech_recognition_is_missing(page):
+    """The orb must react in a browser with no speech engine.
+
+    ``start()`` used to return before the meter started when
+    ``SpeechRecognition`` was absent, so the sphere sat inert and the comment
+    promising otherwise was false. The level display does not depend on the
+    speech service, so the microphone opens first.
+    """
+    result = page.evaluate("""async () => {
+      const { VoiceController } = await import('/js/voice.js');
+      const savedA = window.SpeechRecognition;
+      const savedB = window.webkitSpeechRecognition;
+      delete window.SpeechRecognition;
+      delete window.webkitSpeechRecognition;
+      const seen = { started: 0, stopped: 0, errors: [] };
+      const meter = {
+        active: false,
+        start() {
+          seen.started += 1;
+          this.active = true;
+          return Promise.resolve(true);
+        },
+        stop() { seen.stopped += 1; this.active = false; },
+        setState() {},
+      };
+      const voice = new VoiceController({
+        meter,
+        onError: (m) => seen.errors.push(m),
+      });
+      voice.start();
+      const afterStart = { ...seen, active: meter.active };
+      voice.toggle();
+      const afterToggle = { ...seen, active: meter.active };
+      window.SpeechRecognition = savedA;
+      window.webkitSpeechRecognition = savedB;
+      return { afterStart, afterToggle };
+    }""")
+
+    assert result["afterStart"]["started"] == 1, "the microphone never opened"
+    assert result["afterStart"]["active"] is True
+    assert result["afterStart"]["errors"], "the missing engine was not reported"
+    # And the same click turns it off again, so the device is not left open.
+    assert result["afterToggle"]["stopped"] == 1
+    assert result["afterToggle"]["active"] is False
