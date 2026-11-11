@@ -22,7 +22,8 @@ from .schemas import (
     ConnectorOAuthComplete, ConnectorOAuthStart, ConnectorTokenCreate,
     AssistantCreate, AssistantPatch, BranchCreate, DataDelete, JobCreate,
     JobPatch, MCPInvoke, MCPPromptRun, MCPServerPatch, MediaDescribe,
-    MediaGenerate, MediaSpeak, MessageEdit, ShareCreate, TemplateCreate,
+    MediaGenerate, MediaSpeak, MessageEdit, ShareCreate, TelegramPatch,
+    TemplateCreate,
 )
 
 
@@ -35,6 +36,7 @@ def register_extension_routes(app: FastAPI, st: Any) -> None:
     _register_jobs(app, st)
     _register_settings(app, st)
     _register_voice(app, st)
+    _register_telegram(app, st)
     _register_assistants(app, st)
     _register_sharing(app, st)
     _register_editing(app, st)
@@ -60,6 +62,7 @@ def register_extension_routes(app: FastAPI, st: Any) -> None:
                 "jobs": {"available": hasattr(st, "jobs")},
                 "media": {"available": hasattr(st, "media")},
                 "assistants": {"available": hasattr(st, "assistants")},
+                "telegram": {"available": hasattr(st, "telegram")},
             },
             "mcp_servers": mcp_status,
             "time": time.time(),
@@ -819,6 +822,166 @@ def _register_voice(app: FastAPI, st: Any) -> None:
     def test_hotword() -> dict[str, Any]:
         """Load the configured backend and score one silent chunk."""
         return probe(current_cfg())
+
+
+# ---------------------------------------------------------------- telegram
+def _register_telegram(app: FastAPI, st: Any) -> None:
+    """Turning the bot on, and deciding who may talk to it.
+
+    The token is write-only over the API: it is stored encrypted in the
+    connector vault, and every response reports only whether one exists. The
+    allowlist is numeric chat ids, because a username can be changed and a chat
+    id cannot — and because the check happens before a message reaches the
+    pipeline, not inside it.
+    """
+    from ..channels import BOT_CONNECTION_ID, looks_like_token
+
+    def service() -> Any:
+        return getattr(st, "telegram", None)
+
+    def store() -> Any:
+        return getattr(st, "telegram_settings", None)
+
+    def token_present() -> bool:
+        try:
+            secrets = st.connectors.store.secrets(BOT_CONNECTION_ID) or {}
+        except Exception:
+            return False
+        return bool(secrets.get("access_token"))
+
+    def snapshot() -> dict[str, Any]:
+        svc, settings = service(), store()
+        if svc is None or settings is None:
+            return {"available": False, "enabled": False, "allowlist": [],
+                    "has_token": False, "status": {"running": False},
+                    "note": "This build has no Telegram channel."}
+        values = settings.get()
+        status = svc.status()
+        return {
+            "available": True,
+            "enabled": bool(values["enabled"]),
+            "allowlist": sorted(values["allowlist"]),
+            "has_token": token_present(),
+            "status": status,
+            "note": _telegram_note(values["enabled"], token_present(),
+                                  bool(values["allowlist"]), status),
+        }
+
+    @app.get("/api/telegram")
+    def get_telegram() -> dict[str, Any]:
+        return snapshot()
+
+    @app.patch("/api/telegram")
+    def patch_telegram(body: TelegramPatch) -> dict[str, Any]:
+        svc, settings = service(), store()
+        if svc is None or settings is None:
+            raise HTTPException(status_code=501,
+                                detail="This build has no Telegram channel.")
+        if body.token is not None:
+            token = body.token.strip()
+            if not looks_like_token(token):
+                raise HTTPException(
+                    status_code=400,
+                    detail="A bot token looks like 123456789:AA… — get one from "
+                           "@BotFather.")
+            # Encrypted at rest by the same vault the OAuth connectors use; the
+            # token never appears in the config file or a log line.
+            st.connectors.store.upsert(
+                connection_id=BOT_CONNECTION_ID, provider="telegram",
+                access_token=token, label="Telegram bot", token_type="bot")
+        if body.allowlist is not None:
+            settings.set_allowlist([int(c) for c in body.allowlist])
+        if body.add_chat is not None:
+            settings.add_chat(int(body.add_chat))
+        if body.remove_chat is not None:
+            settings.remove_chat(int(body.remove_chat))
+        if body.enabled is not None:
+            settings.set_enabled(bool(body.enabled))
+            if body.enabled:
+                # A restart is the only way a changed token or allowlist takes
+                # effect; the poller reads both on every message anyway, but the
+                # token is read once at construction.
+                svc.start()
+            else:
+                svc.stop()
+        elif body.token is not None and settings.get()["enabled"]:
+            svc.start()
+        return snapshot()
+
+    @app.post("/api/telegram/start")
+    def start_telegram() -> dict[str, Any]:
+        svc, settings = service(), store()
+        if svc is None or settings is None:
+            raise HTTPException(status_code=501,
+                                detail="This build has no Telegram channel.")
+        if not token_present():
+            raise HTTPException(status_code=400,
+                                detail="Store a bot token before starting.")
+        settings.set_enabled(True)
+        svc.start()
+        return snapshot()
+
+    @app.post("/api/telegram/stop")
+    def stop_telegram() -> dict[str, Any]:
+        svc, settings = service(), store()
+        if svc is None or settings is None:
+            raise HTTPException(status_code=501,
+                                detail="This build has no Telegram channel.")
+        settings.set_enabled(False)
+        svc.stop()
+        return snapshot()
+
+    @app.delete("/api/telegram/token")
+    def forget_token() -> dict[str, Any]:
+        svc, settings = service(), store()
+        if svc is None or settings is None:
+            raise HTTPException(status_code=501,
+                                detail="This build has no Telegram channel.")
+        svc.stop()
+        settings.set_enabled(False)
+        st.connectors.store.delete(BOT_CONNECTION_ID)
+        return snapshot()
+
+    @app.post("/api/telegram/test")
+    def test_telegram() -> dict[str, Any]:
+        """Ask Telegram who this token belongs to, without starting the poller."""
+        svc = service()
+        if svc is None:
+            raise HTTPException(status_code=501,
+                                detail="This build has no Telegram channel.")
+        if not token_present():
+            return {"ok": False, "error": "No bot token is stored."}
+        token = (st.connectors.store.secrets(BOT_CONNECTION_ID) or {}).get("access_token")
+        try:
+            probe = svc.transport_for_test(str(token))
+            try:
+                info = probe.me() or {}
+            finally:
+                try:
+                    probe.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:300]}
+        return {"ok": True, "bot": str(info.get("username") or ""),
+                "name": str(info.get("first_name") or ""),
+                "id": info.get("id")}
+
+
+def _telegram_note(enabled: bool, has_token: bool, has_allowlist: bool,
+                   status: dict[str, Any]) -> str:
+    if not has_token:
+        return "No bot token stored. Create a bot with @BotFather and paste the token."
+    if not enabled:
+        return "Switched off. Nothing is polled."
+    if not has_allowlist:
+        return ("No chat is allowed yet, so every message is ignored. Send the bot "
+                "a message and add the chat id it reports, or use /id from the bot.")
+    error = str(status.get("last_error") or "")
+    if error:
+        return f"Polling, with an error: {error}"
+    bot = str(status.get("bot") or "")
+    return f"Polling as @{bot}." if bot else "Polling."
 
 
 # ---------------------------------------------------------------- settings

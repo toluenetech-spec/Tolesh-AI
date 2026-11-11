@@ -1645,10 +1645,11 @@ async function renderSettings() {
   const host = panel('Settings and privacy',
     'What is stored, what is sent, and how to take it with you or remove it.');
   host.innerHTML = '<div class="ws-empty">Loading…</div>';
-  const [config, media, caps, voice] = await guard(() => Promise.all([
+  const [config, media, caps, voice, telegram] = await guard(() => Promise.all([
     api.get('/api/settings'), api.get('/api/media/capabilities'),
     api.get('/api/capabilities'), api.get('/api/voice/hotword'),
-  ])) || [{ values: {}, descriptions: {} }, {}, {}, {}];
+    api.get('/api/telegram'),
+  ])) || [{ values: {}, descriptions: {} }, {}, {}, {}, {}];
 
   host.innerHTML = '';
   const values = config.values || {};
@@ -1783,6 +1784,130 @@ async function renderSettings() {
     }
   });
   host.appendChild(voiceCard);
+
+  /* ------------------------------------------------------------ telegram */
+  const tg = telegram || {};
+  const tgStatus = tg.status || {};
+  const tgCard = h(`<div><h3>Telegram</h3>
+    <label class="ws-toggle"><input type="checkbox" id="wsTgOn"
+      ${tg.enabled ? 'checked' : ''} ${tg.available === false ? 'disabled' : ''} />
+      <span class="ws-toggle-text"><strong>Answer messages sent to a Telegram bot</strong>
+        <span>Off by default. Only the chat ids listed below are allowed; a
+          message from anyone else is ignored without a reply.</span></span></label>
+    <label class="ws-field"><span>Bot token</span>
+      <input id="wsTgToken" type="password" autocomplete="off" spellcheck="false"
+        placeholder="${tg.has_token
+          ? 'stored — paste a new one to replace it'
+          : '123456789:AA… from @BotFather'}"></label>
+    <div class="ws-row">
+      <button class="ws-btn" id="wsTgSaveToken" type="button">Save token</button>
+      <button class="ws-btn" id="wsTgTest" type="button">Test connection</button>
+      <button class="ws-btn" id="wsTgForget" type="button">Forget token</button>
+    </div>
+    <div class="ws-row">
+      <label class="ws-field"><span>Allow a chat id</span>
+        <input id="wsTgAdd" inputmode="numeric" placeholder="send /id to the bot"
+          autocomplete="off"></label>
+      <button class="ws-btn" id="wsTgAddBtn" type="button">Allow</button>
+    </div>
+    <div class="ws-tg-list" id="wsTgList"></div>
+    <div class="ws-card-sub" id="wsTgStatus" style="margin-bottom:1.2rem"></div></div>`);
+
+  const tgStatusEl = tgCard.querySelector('#wsTgStatus');
+  const tgListEl = tgCard.querySelector('#wsTgList');
+  const tgTokenEl = tgCard.querySelector('#wsTgToken');
+
+  const showTelegram = (payload) => {
+    if (!payload) return;
+    const status = payload.status || {};
+    tgCard.querySelector('#wsTgOn').checked = !!payload.enabled;
+    tgTokenEl.placeholder = payload.has_token
+      ? 'stored — paste a new one to replace it'
+      : '123456789:AA… from @BotFather';
+    tgListEl.innerHTML = '';
+    const ids = payload.allowlist || [];
+    if (!ids.length) {
+      tgListEl.innerHTML = '<span class="ws-card-sub">No chat is allowed yet.</span>';
+    }
+    for (const id of ids) {
+      const row = h(`<span class="ws-chip">${esc(String(id))}
+        <button type="button" title="Remove">×</button></span>`);
+      row.querySelector('button').addEventListener('click', async () => {
+        const res = await guard(() => api.patch('/api/telegram', { remove_chat: id }));
+        if (res) { showTelegram(res); toast('Chat removed.', 'success'); }
+      });
+      tgListEl.appendChild(row);
+    }
+    if (status.running) {
+      tgStatusEl.style.color = '';
+      tgStatusEl.textContent = `Polling as @${status.bot || 'the bot'}`
+        + ` · ${status.messages} message(s) received`
+        + ` · ${status.replies} answered`
+        + ` · ${status.rejected} rejected`;
+    } else if (status.last_error) {
+      tgStatusEl.style.color = 'var(--danger)';
+      tgStatusEl.textContent = `Not polling: ${status.last_error}`;
+    } else {
+      tgStatusEl.style.color = '';
+      tgStatusEl.textContent = payload.note || 'Not polling.';
+    }
+  };
+  showTelegram(tg);
+
+  const tgPatch = async (patch, message) => {
+    const res = await guard(() => api.patch('/api/telegram', patch));
+    if (!res) return null;
+    showTelegram(res);
+    if (message) toast(message, 'success');
+    return res;
+  };
+
+  tgCard.querySelector('#wsTgOn').addEventListener('change', async (event) => {
+    const wanted = event.target.checked;
+    const res = await tgPatch({ enabled: wanted },
+      wanted ? 'Telegram is on.' : 'Telegram is off.');
+    if (!res) event.target.checked = !wanted;
+    else if (wanted && !res.status.running && res.status.last_error) {
+      toast(res.status.last_error, 'error');
+    }
+  });
+  tgCard.querySelector('#wsTgSaveToken').addEventListener('click', async () => {
+    const token = tgTokenEl.value.trim();
+    if (!token) { toast('Paste a token first.', 'error'); return; }
+    const res = await tgPatch({ token }, 'Token saved.');
+    if (res) tgTokenEl.value = '';
+  });
+  tgCard.querySelector('#wsTgForget').addEventListener('click', async () => {
+    const res = await guard(() => api.del('/api/telegram/token'));
+    if (res) { showTelegram(res); toast('Token removed.', 'success'); }
+  });
+  tgCard.querySelector('#wsTgTest').addEventListener('click', async () => {
+    tgStatusEl.style.color = '';
+    tgStatusEl.textContent = 'Asking Telegram…';
+    const result = await guard(() => api.post('/api/telegram/test', {}));
+    if (!result) return;
+    if (result.ok) {
+      tgStatusEl.textContent = `Connected as @${result.bot || result.id}`;
+    } else {
+      tgStatusEl.style.color = 'var(--danger)';
+      tgStatusEl.textContent = result.error || 'The token could not be checked.';
+    }
+  });
+  const addChat = async () => {
+    const input = tgCard.querySelector('#wsTgAdd');
+    const value = Number(input.value.trim());
+    if (!Number.isInteger(value) || value === 0) {
+      toast('A chat id is a whole number, e.g. 123456789.', 'error');
+      return;
+    }
+    const res = await tgPatch({ add_chat: value }, 'Chat allowed.');
+    if (res) input.value = '';
+  };
+  tgCard.querySelector('#wsTgAddBtn').addEventListener('click', addChat);
+  tgCard.querySelector('#wsTgAdd').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); addChat(); }
+  });
+  host.appendChild(tgCard);
 
   const numbers = h(`<div><h3>Limits</h3>
     <div class="ws-row">

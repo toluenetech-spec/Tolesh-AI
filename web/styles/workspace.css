@@ -131,6 +131,42 @@
   align-items: center;
 }
 
+/* Allowed Telegram chat ids: a chip per id, each removable on its own. */
+.ws-tg-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0.7rem;
+}
+
+.ws-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.35rem 0.25rem 0.6rem;
+  border: 1px solid var(--line, #e6e0d6);
+  border-radius: 999px;
+  background: #fff;
+  font: 500 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ink, #241f1a);
+}
+
+.ws-chip button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+  border-radius: 999px;
+  color: var(--muted, #6b635a);
+}
+
+.ws-chip button:hover {
+  background: var(--danger, #b3261e);
+  color: #fff;
+}
+
 .ws-field {
   display: flex;
   flex-direction: column;

@@ -174,6 +174,14 @@ class AppState:
         return {"result": answer}
 
     def close(self) -> None:
+        # Stop the Telegram poller before the stores it reads are closed, or a
+        # poll in flight would raise on a closed connection during shutdown.
+        service = getattr(self, "telegram", None)
+        if service is not None:
+            try:
+                service.stop()
+            except Exception:
+                pass
         for closer in (self.jobs.close, self.mcp.close, self.connectors.close,
                        self.memory_service.close):
             try:
@@ -182,7 +190,11 @@ class AppState:
                 pass
         for obj in (self.ledger, self.memory, self.conversations, self.projects,
                     self.attachments, self.artifacts, self.agent_history,
-                    self.settings, self.assistants, self.shares, self.gate):
+                    self.settings, self.assistants, self.shares, self.gate,
+                    getattr(self, "telegram_links", None),
+                    getattr(self, "telegram_settings", None)):
+            if obj is None:      # the channel may never have been built
+                continue
             try:
                 obj.close()
             except Exception:
@@ -234,7 +246,22 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Telegram is off unless the user turned it on and stored a token; both
+        # are normal states, so a failure here must not stop the server.
+        try:
+            service = getattr(st, "telegram", None)
+            settings = getattr(st, "telegram_settings", None)
+            if service is not None and settings is not None:
+                service.start_if_configured(enabled=bool(settings.get()["enabled"]))
+        except Exception:
+            pass
         yield
+        try:
+            service = getattr(st, "telegram", None)
+            if service is not None:
+                service.stop()
+        except Exception:
+            pass
         # Do not close a caller-supplied state (tests may still use it).
         if state is None:
             st.close()
@@ -576,12 +603,14 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
                                  headers={"Cache-Control": "no-cache",
                                           "X-Accel-Buffering": "no"})
 
-    @app.post("/api/chat/sync")
-    def chat_sync(req: ChatRequest) -> dict[str, Any]:
-        cid = req.conversation_id or st.conversations.create(
-            project_id=req.project_id)["id"]
+    def _run_turn(cid: str, req: ChatRequest, blocks: list[str]) -> dict[str, Any]:
+        """One user message and one answer, stored and remembered.
+
+        Shared by the HTTP route and by the messaging channels so a reply
+        arriving over Telegram goes through exactly the same memory, web and
+        routing path as one typed into the window.
+        """
         st.conversations.add_message(cid, "user", req.message)
-        blocks = _attach_blocks(cid, req)
         blocks += _web_blocks(req, lambda _payload: None)
         messages = _messages_for(st, req, cid, blocks)
         try:
@@ -597,6 +626,59 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
         return {"conversation_id": cid, "text": result.text,
                 "model": result.model_id, "usage": result.usage.as_dict(),
                 "context_blocks": len(blocks)}
+
+    @app.post("/api/chat/sync")
+    def chat_sync(req: ChatRequest) -> dict[str, Any]:
+        cid = req.conversation_id or st.conversations.create(
+            project_id=req.project_id)["id"]
+        return _run_turn(cid, req, _attach_blocks(cid, req))
+
+    # ------------------------------------------------------------- telegram
+    # Built here rather than in AppState because a Telegram reply must go
+    # through the same turn path as a typed message: memory, web context and
+    # model routing included. A test may inject its own service first.
+    from ..channels import (BOT_CONNECTION_ID, TelegramLinks, TelegramService,
+                            TelegramSettings)
+
+    if getattr(st, "telegram_links", None) is None:
+        st.telegram_links = TelegramLinks(st.db_path)
+    if getattr(st, "telegram_settings", None) is None:
+        st.telegram_settings = TelegramSettings(st.db_path)
+
+    if getattr(st, "telegram", None) is None:
+
+        def _telegram_reply(conversation_id: str, text: str) -> str:
+            req = ChatRequest(message=text, conversation_id=conversation_id)
+            answer = _run_turn(conversation_id, req, _attach_blocks(conversation_id, req))
+            return str(answer.get("text") or "")
+
+        def _telegram_token() -> str:
+            try:
+                secrets = st.connectors.store.secrets(BOT_CONNECTION_ID) or {}
+            except Exception:
+                # A damaged vault must read as "no token", not as a crash on
+                # every poll.
+                return ""
+            return str(secrets.get("access_token") or "")
+
+        def _telegram_transcribe(audio: bytes) -> str:
+            from ..media.speech import transcribe as _stt
+
+            # A Telegram voice note is Ogg Opus, not WAV.
+            return str(_stt(audio, suffix=".ogg").get("text") or "")
+
+        def _telegram_speak(text: str) -> tuple[bytes, str]:
+            from ..media.speech import synthesize as _tts
+
+            audio, mime, _meta = _tts(text)
+            return audio, mime
+
+        st.telegram = TelegramService(
+            links=st.telegram_links, reply=_telegram_reply,
+            allowlist=lambda: set(st.telegram_settings.get()["allowlist"]),
+            token=_telegram_token, transcribe=_telegram_transcribe,
+            synthesize=_telegram_speak,
+            new_conversation=lambda title: st.conversations.create(title)["id"])
 
     # --------------------------------------------------------- conversations
     @app.get("/api/conversations")

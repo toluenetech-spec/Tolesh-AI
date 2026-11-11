@@ -249,6 +249,7 @@ tests and its own honest limits; none of them imports the interface.
 | `artifacts/` | Table profiling, five chart types (matplotlib `Agg`), escaped HTML reports, and a store with 0600 files and a download route. The sandbox seeds input files and collects named outputs, so "clean this CSV and save it" works end to end. |
 | `media/` | Image understanding (data-URL content part), configurable image generation over an OpenAI-compatible endpoint, faster-whisper transcription, Piper or `/audio/speech` synthesis. `GET /api/media/capabilities` says what is available **and why not** when it is not. |
 | `jobs/` | Background work as rows: atomic claim, worker pool, `progress` kept separate from `result`, once/interval/cron schedules (calendar matching with `L`, `W`, `#`, `%` and `@daily` macros), pause/resume/cancel/run-now, notifications. State survives a restart. |
+| `channels/` | Telegram as a second way in: long polling on its own thread (no webhook, no exposed port), a numeric chat-id allowlist checked *before* a message reaches the pipeline, one conversation per chat, text and voice notes (STT → chat → TTS). The bot token lives in the same encrypted connector vault as the OAuth tokens. Off by default. |
 
 Around them: `settings/` (typed, validated, `telemetry` cannot be turned on),
 `privacy/` (one audit view over gate + MCP + agents + jobs; zip export with no
@@ -285,10 +286,11 @@ and file reading are always an explicit per-message choice, never a side effect
 of typing.
 
 The later layers register their own routes from
-`src/tolesh/server/routes_ext.py` (78 routes, on top of the core 45):
+`src/tolesh/server/routes_ext.py` (92 routes, on top of the core 45):
 `/api/mcp/*`,
 `/api/connectors/*`, `/api/agents/*`, `/api/artifacts/*`, `/api/media/*`,
-`/api/jobs/*`, `/api/notifications`, `/api/settings`, `/api/assistants`,
+`/api/jobs/*`, `/api/cron/preview`, `/api/notifications`, `/api/settings`,
+`/api/voice/hotword`, `/api/telegram`, `/api/assistants`,
 `/api/templates`, `/api/shares`, `/api/audit`, `/api/export`, `/api/data/delete`
 and `/share/{token}`. `GET /api/capabilities` reports what this build can
 actually do, so the UI never draws a switch that does nothing.

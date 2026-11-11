@@ -323,6 +323,20 @@ class JobPatch(BaseModel):
     notify: bool | None = None
 
 
+class TelegramPatch(BaseModel):
+    """Everything the Telegram card can change, in one request.
+
+    The token is a write-only field: it goes into the encrypted vault and is
+    never read back through the API, so a page that shows it cannot leak it.
+    """
+
+    enabled: bool | None = None
+    allowlist: list[int] | None = Field(default=None, max_length=200)
+    add_chat: int | None = None
+    remove_chat: int | None = None
+    token: str | None = Field(default=None, max_length=400)
+
+
 class MediaDescribe(BaseModel):
     attachment_id: str = Field(..., min_length=1, max_length=64)
     prompt: str = Field(default="Describe this image.", max_length=2000)

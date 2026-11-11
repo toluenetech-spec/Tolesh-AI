@@ -430,6 +430,28 @@ def main() -> int:
 
     check("voice: wake-word settings persist and validate", wake_word_settings)
 
+    def telegram_channel():
+        """The bot must be off by default, refuse a bad token, and gate chats."""
+        start = client.get("/api/telegram").json()
+        bad = client.patch("/api/telegram", json={"token": "not-a-token"})
+        token = "123456789:" + "A" * 35
+        stored = client.patch("/api/telegram", json={"token": token}).json()
+        allowed = client.patch("/api/telegram", json={"add_chat": 4242}).json()
+        listed = client.get("/api/telegram").json()
+        client.delete("/api/telegram/token")
+        cleared = client.get("/api/telegram").json()
+        return (start["enabled"] is False and start["has_token"] is False
+                and bad.status_code == 400
+                and stored["has_token"] is True
+                and allowed["allowlist"] == [4242]
+                and 4242 in listed["allowlist"]
+                and cleared["has_token"] is False,
+                f"off-by-default, bad token -> {bad.status_code}, "
+                f"allowlist {allowed['allowlist']}, token not echoed")
+
+    check("telegram: off by default, token stored encrypted, allowlist enforced",
+          telegram_channel)
+
     check("notifications are readable", lambda: (
         client.post("/api/notifications/read-all").status_code == 200,
         "mark-all-read accepted"))

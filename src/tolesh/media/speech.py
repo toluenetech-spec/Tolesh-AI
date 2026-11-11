@@ -83,11 +83,15 @@ def capabilities() -> dict[str, Any]:
 
 
 def transcribe(audio: bytes, *, language: str | None = None,
-               model_size: str = "base") -> dict[str, Any]:
+               model_size: str = "base", suffix: str = ".wav") -> dict[str, Any]:
     """Transcribe audio locally with faster-whisper.
 
     The model is loaded on first use and cached by the library. A missing model
     download surfaces as a clear error rather than a stack trace.
+
+    ``suffix`` names the container the bytes are in. Decoding is content-based,
+    but a container the decoder has to probe (a Telegram voice note is Ogg
+    Opus, not WAV) is handled more reliably when the temporary file says so.
     """
     if not audio:
         raise SpeechError("The audio file is empty.")
@@ -99,7 +103,7 @@ def transcribe(audio: bytes, *, language: str | None = None,
             "installed in this build.", kind="unavailable")
     from faster_whisper import WhisperModel
 
-    suffix = ".wav"
+    suffix = suffix if (suffix.startswith(".") and len(suffix) <= 6) else ".wav"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
         handle.write(audio)
         path = Path(handle.name)
