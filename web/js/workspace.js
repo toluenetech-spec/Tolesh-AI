@@ -14,6 +14,7 @@ import { confirmDialog, esc, toast } from './components.js';
 
 const TABS = [
   ['conversation', 'Conversation'],
+  ['memory', 'Memory'],
   ['agents', 'Agents'],
   ['mcp', 'MCP'],
   ['connections', 'Connections'],
@@ -209,6 +210,7 @@ function selectTab(id) {
   body.innerHTML = '';
   const render = {
     conversation: renderConversation,
+    memory: renderMemory,
     agents: renderAgents,
     mcp: renderMcp,
     connections: renderConnections,
@@ -1240,6 +1242,320 @@ async function loadAssistants(host) {
     ul.appendChild(item);
   }
   templates.appendChild(ul);
+}
+
+/* ------------------------------------------------------------------ memory */
+/* The memory panel is the point of automatic memory: it has to be possible to
+   see, search, correct and delete everything Tolesh taught itself, and to
+   switch the whole thing off. Every row shows where it came from, how sure
+   Tolesh is, and which project it belongs to. */
+
+const MEMORY_CATEGORIES = ['conversation', 'preference', 'personal', 'project', 'task'];
+
+function confidenceLabel(value) {
+  if (value >= 0.9) return 'certain';
+  if (value >= 0.7) return 'likely';
+  if (value >= 0.5) return 'guess';
+  return 'weak';
+}
+
+async function renderMemory() {
+  const host = panel('Memory',
+    'What Tolesh remembers about you, why, and how to change or delete it.');
+  host.innerHTML = '<div class="ws-empty">Loading…</div>';
+  const state = { q: '', category: '', showSuperseded: false };
+
+  const [settings, status] = await guard(() => Promise.all([
+    api.get('/api/memory/settings'), api.get('/api/memory/status'),
+  ])) || [null, null];
+  if (!settings) {
+    host.innerHTML = '<div class="ws-empty">Memory settings are unavailable.</div>';
+    return;
+  }
+
+  host.innerHTML = '';
+
+  /* --- switches ------------------------------------------------------- */
+  const values = settings.values || {};
+  const descriptions = settings.descriptions || {};
+  const switches = h('<div class="ws-card"><div class="ws-card-head">' +
+    '<div><div class="ws-card-title">Learning and recall</div>' +
+    '<div class="ws-card-sub">These three decide whether anything is stored, ' +
+    'learned in the background, or put into an answer.</div></div></div>' +
+    '<div data-toggles></div><div data-extra></div></div>');
+  const toggleHost = switches.querySelector('[data-toggles]');
+  for (const key of ['memory_enabled', 'memory_auto_extract', 'memory_retrieval']) {
+    const row = h(`<label class="ws-toggle">
+      <input type="checkbox" data-key="${key}" ${values[key] ? 'checked' : ''} />
+      <span class="ws-toggle-text"><strong>${esc(key.replaceAll('_', ' '))}</strong>
+      <span>${esc(descriptions[key] || '')}</span></span></label>`);
+    row.querySelector('input').addEventListener('change', async (event) => {
+      const body = {}; body[key] = event.target.checked;
+      const res = await guard(() => api.patch('/api/memory/settings', body));
+      if (res) { toast('Saved.', 'success'); renderMemory(); }
+      else event.target.checked = !event.target.checked;
+    });
+    toggleHost.appendChild(row);
+  }
+
+  const extra = switches.querySelector('[data-extra]');
+  const categories = new Set(values.memory_categories || []);
+  const catRow = h(`<div class="ws-field"><span>Kinds that may be learned automatically</span>
+    <div class="ws-row" data-cats></div></div>`);
+  for (const category of MEMORY_CATEGORIES) {
+    const allowed = category !== 'conversation';
+    const chip = h(`<label class="ws-toggle" style="padding:.25rem .5rem">
+      <input type="checkbox" value="${category}" ${categories.has(category) ? 'checked' : ''}
+        ${allowed ? '' : 'disabled'} />
+      <span class="ws-toggle-text"><span>${esc(category)}${allowed ? '' : ' (manual only)'}</span></span>
+    </label>`);
+    chip.querySelector('input').addEventListener('change', async () => {
+      const picked = [...catRow.querySelectorAll('input:checked')].map((i) => i.value);
+      const res = await guard(() => api.patch('/api/memory/settings',
+        { memory_categories: picked }));
+      if (res) toast('Saved.', 'success');
+    });
+    catRow.querySelector('[data-cats]').appendChild(chip);
+  }
+  extra.appendChild(catRow);
+
+  const mode = h(`<div class="ws-row" style="margin-top:.75rem">
+    <label class="ws-field"><span>How to read conversations</span>
+      <select id="wsMemMode">
+        <option value="rules">Rules (deterministic, free)</option>
+        <option value="model">A model (slower, better with oblique phrasing)</option>
+      </select></label>
+    <label class="ws-field"><span>Memories per answer</span>
+      <input type="number" id="wsMemLimit" min="1" max="12"
+             value="${esc(values.memory_retrieval_limit || 6)}"></label></div>`);
+  mode.querySelector('#wsMemMode').value = values.memory_extraction_mode || 'rules';
+  mode.querySelector('#wsMemMode').addEventListener('change', async (event) => {
+    const res = await guard(() => api.patch('/api/memory/settings',
+      { memory_extraction_mode: event.target.value }));
+    if (res) toast(event.target.value === 'model'
+      ? 'Extraction will use a model when one is configured.'
+      : 'Extraction uses the rule engine.', 'success');
+  });
+  mode.querySelector('#wsMemLimit').addEventListener('change', async (event) => {
+    const value = Number(event.target.value);
+    const res = await guard(() => api.patch('/api/memory/settings',
+      { memory_retrieval_limit: value }));
+    if (res) toast(`Up to ${value} memories per answer.`, 'success');
+    else event.target.value = values.memory_retrieval_limit;
+  });
+  extra.appendChild(mode);
+  host.appendChild(switches);
+
+  /* --- stats ---------------------------------------------------------- */
+  const stats = (status && status.stats) || {};
+  const counters = (status && status.status && status.status.counters) || {};
+  const summary = h(`<div class="ws-card"><div class="ws-card-head">
+    <div><div class="ws-card-title">${stats.total || 0} active memories</div>
+    <div class="ws-card-sub">${stats.automatic || 0} learned automatically ·
+      ${stats.manual || 0} added by you · ${stats.superseded || 0} replaced ·
+      ${stats.suppressions || 0} things you asked to forget</div></div>
+    <button class="ws-btn" type="button" data-act="learn">Learn from this chat</button></div>
+    <div class="ws-card-sub" data-runline></div></div>`);
+  const runline = summary.querySelector('[data-runline]');
+  const last = (status && status.status && status.status.last_run) || {};
+  runline.textContent = last.ts
+    ? `Last background pass ${when(last.ts)}: ${last.created || 0} new, `
+      + `${last.corrected || 0} corrected, ${last.forgotten || 0} forgotten.`
+    : 'No background pass has run yet in this session.';
+  summary.querySelector('[data-act="learn"]').addEventListener('click', async () => {
+    const cid = conversationId();
+    if (!cid) { toast('Open a conversation first.', 'info'); return; }
+    const button = summary.querySelector('[data-act="learn"]');
+    button.disabled = true;
+    button.textContent = 'Reading…';
+    const res = await guard(() => api.post('/api/memory/extract', { conversation_id: cid }));
+    button.disabled = false;
+    button.textContent = 'Learn from this chat';
+    if (!res) return;
+    const total = res.created.length + res.merged.length + res.corrected.length;
+    toast(total
+      ? `${total} memor${total === 1 ? 'y' : 'ies'} saved.`
+      : 'Nothing new worth keeping in this conversation.', 'success');
+    renderMemory();
+  });
+  host.appendChild(summary);
+
+  /* --- filters -------------------------------------------------------- */
+  const filters = h(`<div class="ws-row">
+    <label class="ws-field" style="flex:1"><span>Search</span>
+      <input type="search" id="wsMemSearch" placeholder="Search what Tolesh remembers…"
+             autocomplete="off"></label>
+    <label class="ws-field"><span>Kind</span>
+      <select id="wsMemFilter"><option value="">All</option>
+      ${MEMORY_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}
+      </select></label>
+    <label class="ws-toggle" style="align-self:end"><input type="checkbox" id="wsMemHistory">
+      <span class="ws-toggle-text"><span>Show replaced</span></span></label>
+  </div>`);
+  host.appendChild(filters);
+
+  const listHost = h('<div data-list></div>');
+  host.appendChild(listHost);
+
+  const footer = h(`<div class="ws-row" style="margin-top:1rem">
+    <button class="ws-btn is-danger" type="button" data-act="wipe">Forget everything</button>
+    <span class="ws-card-sub">Deletes every memory and every "do not remember" note.</span>
+  </div>`);
+  footer.querySelector('[data-act="wipe"]').addEventListener('click', () => {
+    confirmDialog({
+      title: 'Forget everything?',
+      body: 'This deletes all saved memories. It cannot be undone.',
+      confirmLabel: 'Forget everything',
+      danger: true,
+      onConfirm: async () => {
+        const res = await guard(() => api.post('/api/memory/forget',
+          { confirm: 'FORGET EVERYTHING' }));
+        if (res) { toast(`${res.deleted} memories deleted.`, 'success'); renderMemory(); }
+      },
+    });
+  });
+  host.appendChild(footer);
+
+  const suppressions = h('<div data-supp></div>');
+  host.appendChild(suppressions);
+
+  async function loadList() {
+    listHost.innerHTML = '<div class="ws-empty">Loading…</div>';
+    const params = new URLSearchParams();
+    if (state.q) params.set('q', state.q);
+    if (state.category) params.set('category', state.category);
+    if (state.showSuperseded) params.set('include_superseded', 'true');
+    const data = await guard(() => api.get(`/api/memory?${params.toString()}`));
+    if (!data) { listHost.innerHTML = ''; return; }
+    listHost.innerHTML = '';
+    if (!data.items.length) {
+      listHost.appendChild(h(`<div class="ws-empty">${state.q
+        ? 'Nothing matches that search.'
+        : 'Nothing stored yet. Talk to Tolesh and it will learn what matters.'}</div>`));
+      return;
+    }
+    for (const item of data.items) {
+      listHost.appendChild(memoryRow(item, loadList));
+    }
+  }
+
+  async function loadSuppressions() {
+    const data = await guard(() => api.get('/api/memory/suppressions'));
+    suppressions.innerHTML = '';
+    if (!data || !data.suppressions.length) return;
+    const card = h(`<div class="ws-card"><div class="ws-card-head">
+      <div><div class="ws-card-title">Asked to forget</div>
+      <div class="ws-card-sub">Tolesh will not learn these again. Removing a row
+      lets a future conversation store the topic again.</div></div></div>
+      <ul class="ws-list" data-rows></ul></div>`);
+    for (const row of data.suppressions) {
+      const li = h(`<li><div><div class="ws-card-title">${esc(row.phrase)}</div>
+        <div class="ws-card-sub">Since ${when(row.created_at)}</div></div>
+        <button class="ws-btn" type="button" data-act="allow">Allow again</button></li>`);
+      li.querySelector('[data-act="allow"]').addEventListener('click', async () => {
+        await guard(() => api.del(`/api/memory/suppressions/${row.id}`));
+        toast('That topic may be remembered again.', 'success');
+        loadSuppressions();
+      });
+      card.querySelector('[data-rows]').appendChild(li);
+    }
+    suppressions.appendChild(card);
+  }
+
+  let searchTimer = null;
+  filters.querySelector('#wsMemSearch').addEventListener('input', (event) => {
+    state.q = event.target.value.trim();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadList, 220);
+  });
+  filters.querySelector('#wsMemFilter').addEventListener('change', (event) => {
+    state.category = event.target.value;
+    loadList();
+  });
+  filters.querySelector('#wsMemHistory').addEventListener('change', (event) => {
+    state.showSuperseded = event.target.checked;
+    loadList();
+  });
+
+  loadList();
+  loadSuppressions();
+}
+
+function memoryRow(item, reload) {
+  const replaced = item.status === 'superseded';
+  const card = h(`<div class="ws-card ${replaced ? 'is-muted' : ''}" data-id="${esc(item.id)}">
+    <div class="ws-card-head">
+      <div>
+        <div class="ws-card-title" data-content>${esc(item.content)}</div>
+        <div class="ws-card-sub">
+          ${badge(item.category_label, item.category)}
+          ${replaced ? badge('replaced', 'warn') : ''}
+          ${item.pinned ? badge('pinned') : ''}
+          ${item.disabled ? badge('switched off', 'warn') : ''}
+          ${badge(item.origin === 'manual' ? 'you added this' : 'learned automatically')}
+          confidence ${esc(confidenceLabel(item.confidence))}
+          · used ${item.use_count}×
+          · created ${when(item.created_at)}
+          · updated ${when(item.updated_at)}
+          ${item.project_id ? `· project ${esc(item.project_id.slice(0, 8))}` : '· every project'}
+          ${item.superseded_by ? `· replaced by ${esc(item.superseded_by.slice(0, 8))}` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="ws-row" data-actions></div>
+  </div>`);
+  const actions = card.querySelector('[data-actions]');
+
+  const edit = h('<button class="ws-btn" type="button">Edit</button>');
+  edit.addEventListener('click', () => {
+    const title = card.querySelector('[data-content]');
+    const box = h(`<div><textarea class="ws-field" rows="3"
+      style="width:100%">${esc(item.content)}</textarea>
+      <div class="ws-row"><button class="ws-btn" type="button" data-save>Save</button>
+      <button class="ws-btn" type="button" data-cancel>Cancel</button></div></div>`);
+    title.replaceWith(box);
+    actions.hidden = true;
+    box.querySelector('[data-cancel]').addEventListener('click', reload);
+    box.querySelector('[data-save]').addEventListener('click', async () => {
+      const content = box.querySelector('textarea').value.trim();
+      if (!content) { toast('A memory cannot be empty.', 'error'); return; }
+      const res = await guard(() => api.patch(`/api/memory/${item.id}`, { content }));
+      if (res) { toast('Memory updated.', 'success'); reload(); }
+    });
+  });
+  actions.appendChild(edit);
+
+  const pin = h(`<button class="ws-btn" type="button">${item.pinned ? 'Unpin' : 'Pin'}</button>`);
+  pin.addEventListener('click', async () => {
+    const res = await guard(() => api.patch(`/api/memory/${item.id}`, { pinned: !item.pinned }));
+    if (res) reload();
+  });
+  actions.appendChild(pin);
+
+  const off = h(`<button class="ws-btn" type="button">
+    ${item.disabled ? 'Switch on' : 'Switch off'}</button>`);
+  off.addEventListener('click', async () => {
+    const res = await guard(() => api.patch(`/api/memory/${item.id}`, { disabled: !item.disabled }));
+    if (res) reload();
+  });
+  actions.appendChild(off);
+
+  const del = h('<button class="ws-btn is-danger" type="button">Delete</button>');
+  del.addEventListener('click', () => {
+    confirmDialog({
+      title: 'Delete this memory?',
+      body: `"${item.content.slice(0, 120)}" will be removed, and will not be relearned from the same conversation.`,
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        await guard(() => api.del(`/api/memory/${item.id}`));
+        toast('Deleted.', 'success');
+        reload();
+      },
+    });
+  });
+  actions.appendChild(del);
+  return card;
 }
 
 /* ---------------------------------------------------------------- settings */

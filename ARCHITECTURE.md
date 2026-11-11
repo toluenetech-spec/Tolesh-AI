@@ -122,7 +122,7 @@ Browser / QtWebEngine / (future web, Android)
 src/tolesh/server/app.py  ── token_guard (injected token or TOLESH_API_TOKEN)
         │
         ├── ConversationManager.window(cid, limit=20)   → recent turns
-        ├── LayeredMemory.build_context()               → transparent facts
+        ├── MemoryService.context_for(question)         → the few relevant facts
         ├── build_system_prompt(persona, task, model)   → system message
         ▼
 ModelRouter.stream(messages, task, model)
@@ -183,7 +183,10 @@ Two separate SQLite stores, intentionally:
 - `memory/` (inherited) — the upstream vector/graph memory remains available
   for the desktop pipeline.
 
-`build_context()` injects only what is stored, and the UI shows every item so
+Retrieval replaces the old whole-store dump: `MemoryService.context_for(question)`
+scores every active memory and injects at most six. `build_context()` still
+exists for the paths that have no question (the voice daemon, "what do you
+know"), and the UI shows every item so
 the user can see and delete anything. Nothing is written silently.
 
 ## 6. Permission model

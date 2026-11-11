@@ -14,6 +14,8 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 
+from . import media_urls
+
 from .schemas import (
     AgentRunCreate, ArtifactAnalyse, ArtifactChart, ConnectorActionRun,
     ConnectorOAuthComplete, ConnectorOAuthStart, ConnectorTokenCreate,
@@ -428,11 +430,20 @@ def _register_artifacts(app: FastAPI, st: Any) -> None:
 
     from ..artifacts import AnalysisError, chart_png, summarise, summarise_text
 
+    def _signed(artifact: dict[str, Any]) -> dict[str, Any]:
+        """Attach a download URL the browser can use without the bearer token.
+
+        The store builds a bare path; an ``<img src>`` cannot send headers, so
+        every preview would 401 as soon as the API is token-guarded.
+        """
+        return media_urls.with_signed_url(st.media_secret, artifact)
+
     @app.get("/api/artifacts")
     def list_artifacts(conversation_id: str | None = None,
                        kind: str | None = None) -> dict[str, Any]:
-        return {"artifacts": st.artifacts.list(conversation_id=conversation_id,
-                                               kind=kind),
+        return {"artifacts": [_signed(item) for item in
+                              st.artifacts.list(conversation_id=conversation_id,
+                                                kind=kind)],
                 "stats": st.artifacts.stats()}
 
     @app.get("/api/artifacts/{artifact_id}")
@@ -440,7 +451,7 @@ def _register_artifacts(app: FastAPI, st: Any) -> None:
         meta = st.artifacts.get(artifact_id)
         if meta is None:
             raise HTTPException(status_code=404, detail="Unknown artifact.")
-        return {"artifact": meta}
+        return {"artifact": _signed(meta)}
 
     @app.get("/api/artifacts/{artifact_id}/download")
     def download_artifact(artifact_id: str) -> Any:
@@ -496,7 +507,7 @@ def _register_artifacts(app: FastAPI, st: Any) -> None:
             f"{chart_meta['chart_type']}-{chart_meta['x']}.png", png,
             kind="image", mime="image/png", meta=chart_meta,
             conversation_id=body.conversation_id)
-        return {"artifact": artifact}
+        return {"artifact": _signed(artifact)}
 
 
 # ------------------------------------------------------------------- media

@@ -259,6 +259,12 @@
   color: #8a5a2b;
 }
 
+/* A replaced memory stays visible for audit, but it must not read as current. */
+.ws-card.is-muted {
+  opacity: 0.62;
+  border-style: dashed;
+}
+
 .ws-empty {
   padding: 1.2rem;
   border: 1px dashed var(--line, #e6e0d6);

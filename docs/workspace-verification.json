@@ -1,9 +1,9 @@
 {
-  "url": "http://127.0.0.1:8788",
+  "url": "http://127.0.0.1:8787",
   "checks": {
     "rail_button_present": true,
     "drawer_opens": true,
-    "eight_tabs": true,
+    "all_tabs_listed": true,
     "all_tabs_render": true,
     "mcp_server_saved": true,
     "mcp_server_connected": true,
@@ -18,6 +18,10 @@
     "assistant_saved": true,
     "assistant_selectable": true,
     "assistant_sets_composer": true,
+    "memory_switches": true,
+    "memory_search_finds": true,
+    "memory_edit_persists": true,
+    "memory_delete_persists": true,
     "settings_persist": true,
     "telemetry_locked": true,
     "temperature_saved": true,
@@ -33,6 +37,7 @@
   "errors": [],
   "shots": [
     "docs/img/workspace/tab-conversation.png",
+    "docs/img/workspace/tab-memory.png",
     "docs/img/workspace/tab-agents.png",
     "docs/img/workspace/tab-mcp.png",
     "docs/img/workspace/tab-connections.png",
@@ -45,6 +50,7 @@
     "docs/img/workspace/files-artifact.png",
     "docs/img/workspace/files-artifacts-grid.png",
     "docs/img/workspace/artifact-lightbox.png",
+    "docs/img/workspace/memory.png",
     "docs/img/workspace/settings.png",
     "docs/img/workspace/width-320.png",
     "docs/img/workspace/width-768.png"
@@ -74,9 +80,9 @@
       "tokenharbor:glm-5.3-flash",
       "offline:tolesh-offline"
     ],
-    "database": "/tmp/tb-reg/data/tolesh/tolesh.db",
+    "database": "/workspace/tolesh/.run/data/tolesh/tolesh.db",
     "static_frontend": true,
-    "time": 1794359332.4800532
+    "time": 1794361353.9041471
   },
   "agent_run": {
     "state": "Done in 1 steps",
@@ -86,7 +92,7 @@
     "model": null,
     "task": "chat",
     "temperature": 0.3,
-    "assistant_id": "asst-5810a3696d"
+    "assistant_id": "asst-7f86ec68d0"
   },
   "passed": true
 }

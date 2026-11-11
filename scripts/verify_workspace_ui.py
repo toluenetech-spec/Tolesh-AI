@@ -31,8 +31,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-TABS = ["conversation", "agents", "mcp", "connections", "files", "tasks",
-        "assistants", "settings"]
+TABS = ["conversation", "memory", "agents", "mcp", "connections", "files",
+        "tasks", "assistants", "settings"]
 WIDTHS = [320, 375, 768, 1024, 1440, 1920]
 
 
@@ -47,6 +47,23 @@ def wait_for_health(url: str, timeout: float = 30.0) -> dict:
             last = str(exc)
             time.sleep(0.4)
     raise RuntimeError(f"server did not become healthy: {last}")
+
+
+def api_json(url: str, path: str, token: str = "", method: str = "GET",
+             body: dict | None = None) -> dict:
+    """Call the API with the same bearer token the page uses.
+
+    Without this the checks below only work against a server started with no
+    token, which is not how anyone exposes Tolesh.
+    """
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    request = urllib.request.Request(f"{url}{path}", data=data, method=method)
+    if data is not None:
+        request.add_header("Content-Type", "application/json")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def collect(page, errors: list[str]) -> None:
@@ -112,7 +129,8 @@ def main() -> int:
             context = browser.new_context(viewport={"width": 1440, "height": 900})
             page = context.new_page()
             collect(page, report["errors"])
-            _run(page, url, out, report, Path(args.fixture), csv_path)
+            _run(page, url, out, report, Path(args.fixture), csv_path,
+                 args.token, page_url)
             browser.close()
     except Exception as exc:  # noqa: BLE001 - reported, never hidden
         report["crashed"] = f"{type(exc).__name__}: {exc}"
@@ -136,7 +154,7 @@ def main() -> int:
 
 
 def _run(page, url: str, out: Path, report: dict, fixture: Path,
-         csv_path: Path) -> None:
+         csv_path: Path, token: str = "", page_url: str | None = None) -> None:
     check = report["checks"]
 
     def shot(name: str) -> None:
@@ -144,7 +162,9 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
         page.screenshot(path=str(path), full_page=False)
         report["shots"].append(str(path.relative_to(ROOT)))
 
-    page.goto(url, wait_until="domcontentloaded")
+    # The token rides in the URL once; the app moves it into localStorage
+    # and strips it from the address bar.
+    page.goto(page_url or url, wait_until="domcontentloaded")
     page.wait_for_selector("#workspaceRailBtn", timeout=15000)
     check["rail_button_present"] = True
 
@@ -153,7 +173,7 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
     check["drawer_opens"] = page.is_visible("#wsDrawer")
 
     tabs = page.eval_on_selector_all(".ws-tab", "els => els.map(e => e.id)")
-    check["eight_tabs"] = tabs == [f"ws-tab-{t}" for t in TABS]
+    check["all_tabs_listed"] = tabs == [f"ws-tab-{t}" for t in TABS]
 
     # Every tab must render a panel, and no panel may be stuck on "Loading…".
     # A fixed sleep turned a slow fetch into a false regression once, so poll
@@ -306,6 +326,39 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
     check["assistant_selectable"] = "selected" in page.inner_text("#wsAssistantList").lower()
     check["assistant_sets_composer"] = page.input_value("#input") == "What should I edit today?"
 
+    # Memory: seed one fact through the API, then find, edit and delete it in
+    # the panel. Automatic memory is only trustworthy if the user can do those
+    # three things without leaving the UI.
+    seeded = api_json(url, "/api/memory", token, "POST",
+                      {"category": "preference",
+                       "content": "Prefers Yoruba greetings in the morning"})
+    page.click("#ws-tab-memory")
+    page.wait_for_selector("#wsMemSearch", timeout=10000)
+    check["memory_switches"] = len(page.query_selector_all(
+        "#wsBody .ws-toggle input[data-key]")) >= 3
+    page.fill("#wsMemSearch", "Yoruba")
+    page.wait_for_selector("#wsBody .ws-card[data-id]", timeout=10000)
+    check["memory_search_finds"] = "Yoruba" in page.inner_text("#wsBody")
+
+    page.click('#wsBody .ws-card[data-id] button:has-text("Edit")')
+    page.fill("#wsBody .ws-card[data-id] textarea", "Prefers Yoruba greetings all day")
+    page.click('#wsBody .ws-card[data-id] button:has-text("Save")')
+    page.wait_for_timeout(900)
+    edited = [item for item in api_json(url, "/api/memory", token)["items"]
+              if item["id"] == seeded["id"]]
+    check["memory_edit_persists"] = bool(edited) and edited[0]["content"].endswith("all day")
+
+    page.fill("#wsMemSearch", "Yoruba")
+    page.wait_for_selector("#wsBody .ws-card[data-id]", timeout=10000)
+    page.click('#wsBody .ws-card[data-id] button:has-text("Delete")')
+    page.wait_for_selector(".modal [data-confirm]", timeout=5000)
+    page.click(".modal [data-confirm]")
+    page.wait_for_timeout(900)
+    remaining = [item for item in api_json(url, "/api/memory", token)["items"]
+                 if item["id"] == seeded["id"]]
+    check["memory_delete_persists"] = not remaining
+    shot("memory")
+
     # Settings: flip a real toggle and confirm the server agreed.
     page.click("#ws-tab-settings")
     page.wait_for_selector(".ws-toggle input")
@@ -313,8 +366,7 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
     page.click('.ws-toggle input[data-key="memory_enabled"]')
     page.wait_for_timeout(700)
     after = page.is_checked('.ws-toggle input[data-key="memory_enabled"]')
-    with urllib.request.urlopen(f"{url}/api/settings", timeout=5) as r:
-        stored = json.loads(r.read().decode("utf-8"))["values"]["memory_enabled"]
+    stored = api_json(url, "/api/settings", token)["values"]["memory_enabled"]
     check["settings_persist"] = before != after and stored == after
     check["telemetry_locked"] = page.is_disabled('.ws-toggle input[data-key="telemetry"]')
 
@@ -404,8 +456,12 @@ def _run(page, url: str, out: Path, report: dict, fixture: Path,
     page.wait_for_timeout(200)
     page.keyboard.press("ArrowRight")
     page.wait_for_timeout(300)
-    check["tab_arrow_keys"] = page.get_attribute("#ws-tab-agents", "aria-selected") == "true"
-    check["tab_controls_panel"] = page.locator("#ws-panel-agents").count() == 1
+    # The tab to the right of the first one, whatever it is: hard-coding
+    # "agents" made this check fail the day a tab was inserted before it.
+    neighbour = TABS[1]
+    check["tab_arrow_keys"] = page.get_attribute(
+        f"#ws-tab-{neighbour}", "aria-selected") == "true"
+    check["tab_controls_panel"] = page.locator(f"#ws-panel-{neighbour}").count() == 1
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
     check["focus_returns"] = page.evaluate(

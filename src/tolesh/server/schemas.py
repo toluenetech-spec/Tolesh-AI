@@ -78,6 +78,53 @@ class MemoryCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=8000)
     source: str = "user"
     pinned: bool = False
+    # Filing a memory under a project keeps it out of every other project's
+    # conversations; leaving it empty makes it a global fact.
+    project_id: str | None = Field(default=None, max_length=64)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    importance: float = Field(default=0.6, ge=0.0, le=1.0)
+
+
+class MemoryPatch(BaseModel):
+    """Edit one memory. Only the fields present are changed."""
+
+    category: Literal["conversation", "preference", "personal", "project",
+                      "task"] | None = None
+    content: str | None = Field(default=None, min_length=1, max_length=8000)
+    pinned: bool | None = None
+    disabled: bool | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    importance: float | None = Field(default=None, ge=0.0, le=1.0)
+    project_id: str | None = Field(default=None, max_length=64)
+
+
+class MemorySearch(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500)
+    limit: int = Field(default=10, ge=1, le=50)
+    project_id: str | None = Field(default=None, max_length=64)
+
+
+class MemoryExtractRequest(BaseModel):
+    """Ask Tolesh to learn from a conversation now, instead of in the background."""
+
+    conversation_id: str = Field(..., min_length=1, max_length=64)
+
+
+class MemoryForgetMatch(BaseModel):
+    """Forget everything matching a phrase, and refuse to learn it again."""
+
+    phrase: str = Field(..., min_length=2, max_length=400)
+
+
+class MemorySettingsPatch(BaseModel):
+    memory_enabled: bool | None = None
+    memory_auto_extract: bool | None = None
+    memory_retrieval: bool | None = None
+    memory_categories: list[Literal["conversation", "preference", "personal",
+                                    "project", "task"]] | None = None
+    memory_extraction_mode: Literal["rules", "model"] | None = None
+    memory_extraction_model: str | None = Field(default=None, max_length=200)
+    memory_retrieval_limit: int | None = Field(default=None, ge=1, le=12)
 
 
 class MemoryForget(BaseModel):

@@ -89,8 +89,11 @@ def export_all(state: Any) -> tuple[bytes, dict[str, Any]]:
         for attachment in state.attachments.list():
             data = state.attachments.read_bytes(attachment["id"])
             if data is not None:
-                archive.write(io.BytesIO(data),
-                              f"files/attachments/{attachment['id']}-{attachment['filename']}")
+                # ``ZipFile.write`` takes a path, not a file object: passing a
+                # BytesIO raised TypeError and made /api/export fail outright
+                # for anyone who had ever uploaded a file.
+                archive.writestr(f"files/attachments/{attachment['id']}-{attachment['filename']}",
+                                 data)
                 files += 1
         counts["files"] = files
 

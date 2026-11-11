@@ -55,8 +55,38 @@ unchanged.
 | **Model settings** | ◐ | ✅ (temperature, top_p, …) | ✅ | ✅ | ✗ | ◐ temperature, sent with each message; no per-model presets |
 | **Skills / plugin packages** | ✅ (GPTs) | ✅ (skills) | ✅ (tools) | ✅ (marketplace) | ✗ | ⛔ see below — assistants + MCP cover the use without installing third-party code |
 | **Data export / deletion** | ✅ | ◐ | ◐ | ◐ | ✗ | ✅ zip export, exact-phrase deletion |
+| **Automatic memory** | ✅ | ✅ (manual + auto) | ◐ | ✅ | ✗ (manual only, dumped into every prompt) | ✅ extraction, dedup, correction, forgetting, relevance retrieval, per-category switches, full panel |
 | **Audit log** | ◐ | ◐ | ◐ | ◐ | ✗ | ✅ gate + MCP + agents + jobs, one view |
 | Multi-user / RBAC | ✅ | ✅ | ✅ | ✅ | ✗ | ⛔ by policy |
+
+## Automatic memory (the round that closed this)
+
+The brief's first priority. Before: a table you filled by hand, and
+`build_context()` pasted the entire table into every prompt.
+
+Now:
+
+| Capability | State | Where it lives |
+|---|---|---|
+| Learns from conversations without being asked | ✅ background worker, debounced, never blocks a reply | `memory_ext/service.py` |
+| Rule extraction (deterministic, free) | ✅ | `memory_ext/extract.py` |
+| Model extraction (optional, JSON-strict, falls back to rules) | ✅ `memory_extraction_mode=model` | same |
+| Dedup / merge | ✅ similarity ≥ 0.86 merges, confidence raised | `memory_ext/store.py` |
+| Corrections | ✅ named slots and explicit "actually…" supersede the old row, which stays visible as history | `service.py::_write` |
+| Confidence / importance / origin / evidence | ✅ per row, shown in the panel | `store.py` |
+| Project scoping | ✅ enforced in retrieval, not in the prompt | `retrieve.py::eligible` |
+| Relevance retrieval (not a dump) | ✅ lexical + concept + 3-gram score, budgeted, top-6 default | `retrieve.py` |
+| Forgetting that sticks | ✅ delete + suppression, so it is not relearned | `store.py::forget_matching` |
+| Credentials never stored | ✅ pattern + keyword filter, per clause | `extract.py::contains_secret` |
+| Injection never stored | ✅ and memories are labelled data in the prompt | `extract.py`, `persona/prompt.py` |
+| Panel: view, search, edit, pin, switch off, delete, wipe, history | ✅ new **Memory** tab | `web/js/workspace.js` |
+| Switches: master, auto-extract, retrieval, per-category, mode, budget | ✅ `memory_enabled` was decorative before; it is now wired | `settings/store.py`, `service.py` |
+| Survives restart | ✅ same SQLite file; proved by a subprocess test | `tests/test_memory_workflow.py` |
+
+Limits, stated in full in `docs/MEMORY.md`: retrieval is **lexical**, not a
+neural embedding search — it matches words, stems, a hand-written concept table
+and character n-grams, and it will not match "IDE" to "editor". Rules are
+English-shaped. Nothing decays automatically.
 
 ## What shipped in this round
 

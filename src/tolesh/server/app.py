@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -44,7 +45,7 @@ from .. import codeexec, media, netsearch
 from ..conversation import ConversationManager
 from ..jobs import JobScheduler
 from ..mcp_bridge import MCPManager, MCPServerStore
-from ..memory_ext import LayeredMemory
+from ..memory_ext import LayeredMemory, MemoryService
 from ..netsearch import (FetchError, SearchUnavailable, configured_backends,
                          fetch_page, page_block, results_block, search)
 from ..permissions import PermissionGate
@@ -53,11 +54,14 @@ from ..tools_ext import ComputerTools
 from ..settings import SettingsStore
 from ..workspace import (AssistantStore, AttachmentStore, ProjectStore,
                          ShareStore)
+from . import media_urls
 from .schemas import (
     ChatRequest, ConfigPatch, ConversationCreate, ConversationFlags,
-    ConversationRename, ExecRequest, FallbackOrder, MemoryCreate, MemoryForget,
-    ModelPatch, PermissionDecision, ProjectCreate, ProjectPatch, ProviderPatch,
-    ToolInvoke, WebFetchRequest, WebSearchRequest,
+    ConversationRename, ExecRequest, FallbackOrder, MemoryCreate,
+    MemoryExtractRequest, MemoryForget, MemoryForgetMatch, MemoryPatch,
+    MemorySearch, MemorySettingsPatch, ModelPatch, PermissionDecision,
+    ProjectCreate, ProjectPatch, ProviderPatch, ToolInvoke, WebFetchRequest,
+    WebSearchRequest,
 )
 
 VERSION = "0.1.0"
@@ -77,7 +81,8 @@ def default_state_db_path() -> str:
 
 class AppState:
     def __init__(self, *, db_path: str | None = None, in_memory: bool = False,
-                 attachments_root: str | Path | None = None):
+                 attachments_root: str | Path | None = None,
+                 memory_debounce: float = 1.5):
         # Persistent by default: an in-memory default silently discarded every
         # conversation and memory item on restart, which is exactly the bug the
         # unified desktop application had to fix. Tests opt into ``in_memory``.
@@ -91,7 +96,6 @@ class AppState:
         self.registry = Registry.from_defaults()
         self.ledger = UsageLedger(in_memory=in_memory, db_path=path)
         self.router = ModelRouter(self.registry, self.ledger)
-        self.memory = LayeredMemory(db_path=path)
         self.conversations = ConversationManager(db_path=path)
         self.projects = ProjectStore(db_path=path)
         # An in-memory database must not write uploaded files into the real
@@ -125,6 +129,13 @@ class AppState:
             netsearch=netsearch, artifacts=self.artifacts, media=media,
             router=self.router)
         self.settings = SettingsStore(db_path=path)
+        # Memory is a store plus a service: the store is the table, the service
+        # owns extraction, retrieval and the switches. The service is created
+        # after the settings because it reads them on every call.
+        self.memory = LayeredMemory(db_path=path)
+        self.memory_service = MemoryService(
+            self.memory, settings=self.settings, router=self.router,
+            conversations=self.conversations, debounce_sec=memory_debounce)
         self.assistants = AssistantStore(db_path=path)
         self.shares = ShareStore(db_path=path)
         self.jobs = JobScheduler(db_path=path, executor=self.run_job)
@@ -163,7 +174,8 @@ class AppState:
         return {"result": answer}
 
     def close(self) -> None:
-        for closer in (self.jobs.close, self.mcp.close, self.connectors.close):
+        for closer in (self.jobs.close, self.mcp.close, self.connectors.close,
+                       self.memory_service.close):
             try:
                 closer()
             except Exception:
@@ -185,8 +197,15 @@ def _messages_for(state: AppState, req: ChatRequest, conversation_id: str,
     if not project_id:
         meta = state.conversations.get(conversation_id)
         project_id = (meta or {}).get("project_id")
-    system = build_system_prompt(state.memory.build_context(), task=req.task,
+    # Retrieval, not a dump: only the memories that bear on this message are put
+    # in front of the model. The whole store went into every prompt before this,
+    # which got steadily worse as the store grew.
+    memory_block = state.memory_service.context_for(req.message, project_id=project_id)
+    memory_note = "" if memory_block else state.memory_service.memory_note(
+        req.message, project_id=project_id)
+    system = build_system_prompt(memory_block, task=req.task,
                                  model_label=label,
+                                 memory_note=memory_note,
                                  project_instructions=state.projects.instructions_for(project_id))
     assistant = state.assistants.get_assistant(req.assistant_id) if req.assistant_id else None
     if assistant and assistant.get("instructions"):
@@ -232,6 +251,10 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
     )
 
     api_token = os.environ.get("TOLESH_API_TOKEN", "") if api_token is None else api_token
+    # Signing key for artifact URLs. Per-process on purpose: a URL that leaks
+    # stops working when Tolesh restarts.
+    media_secret = secrets.token_bytes(32)
+    st.media_secret = media_secret
 
     @app.middleware("http")
     async def token_guard(request: Request, call_next):
@@ -244,7 +267,16 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
                   # A share link is its own credential and shows one
                   # conversation, which is the entire point of sharing it.
                   or path.startswith("/share/"))
-        if api_token and path.startswith("/api/") and not public:
+        # A file the browser loads by itself (<img>, <video>, a download link)
+        # cannot send a header. Those carry a per-artifact signature instead,
+        # which is narrower than the token: one file, one hour.
+        signed_media = (path.startswith("/api/artifacts/")
+                        and path.endswith("/download")
+                        and media_urls.verify(
+                            media_secret, path.split("/")[3],
+                            exp=request.query_params.get("exp"),
+                            sig=request.query_params.get("sig")))
+        if api_token and path.startswith("/api/") and not public and not signed_media:
             supplied = request.headers.get("Authorization", "")
             if supplied != f"Bearer {api_token}":
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
@@ -472,6 +504,25 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
                                                  "chars": len(payload["results"])}})
         return blocks
 
+    def _project_of(cid: str) -> str | None:
+        return (st.conversations.get(cid) or {}).get("project_id")
+
+    def _remember(cid: str, user_text: str, reply_text: str) -> None:
+        """Hand the finished exchange to the memory worker.
+
+        Fire-and-forget on purpose: extraction costs a model call at worst and a
+        few milliseconds at best, and neither belongs in front of a reply the
+        user is already reading. A memory failure must never surface as a chat
+        failure, hence the blanket except.
+        """
+        try:
+            st.memory_service.observe_turn(
+                conversation_id=cid, project_id=_project_of(cid),
+                turns=[{"role": "user", "content": user_text},
+                       {"role": "assistant", "content": reply_text}])
+        except Exception:
+            pass
+
     @app.post("/api/chat")
     def chat(req: ChatRequest) -> StreamingResponse:
         # A saved assistant may carry its own model. An explicit model on the
@@ -517,6 +568,7 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
                     st.conversations.add_message(cid, "assistant", text,
                                                  model=model_used,
                                                  tokens=max(1, len(text) // 4))
+                    _remember(cid, req.message, text)
             except Exception as exc:  # keep the SSE stream well-formed
                 yield _sse({"type": "error", "data": {"message": str(exc)}})
 
@@ -541,6 +593,7 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
         st.conversations.add_message(cid, "assistant", result.text,
                                      model=result.model_id,
                                      tokens=result.usage.total_tokens)
+        _remember(cid, req.message, result.text)
         return {"conversation_id": cid, "text": result.text,
                 "model": result.model_id, "usage": result.usage.as_dict(),
                 "context_blocks": len(blocks)}
@@ -741,18 +794,104 @@ def create_app(*, state: AppState | None = None, web_dir: str | Path | None = No
 
 
     # --------------------------------------------------------------- memory
+    # Literal paths are declared before the ``{item_id}`` routes: FastAPI matches
+    # in registration order, and ``/api/memory/settings`` would otherwise be
+    # read as a memory id called "settings".
+    @app.get("/api/memory/settings")
+    def memory_settings() -> dict[str, Any]:
+        return st.memory_service.settings_view()
+
+    @app.patch("/api/memory/settings")
+    def patch_memory_settings(body: MemorySettingsPatch) -> dict[str, Any]:
+        changes = body.model_dump(exclude_none=True)
+        if not changes:
+            return st.memory_service.settings_view()
+        try:
+            return st.memory_service.patch_settings(changes)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/memory/status")
+    def memory_status() -> dict[str, Any]:
+        return {"status": st.memory_service.status(), "stats": st.memory.stats()}
+
+    @app.get("/api/memory/suppressions")
+    def memory_suppressions() -> dict[str, Any]:
+        return {"suppressions": st.memory.suppressions()}
+
+    @app.delete("/api/memory/suppressions/{sid}")
+    def delete_suppression(sid: str) -> dict[str, Any]:
+        if not st.memory.remove_suppression(sid):
+            raise HTTPException(status_code=404, detail="Suppression not found")
+        return {"status": "ok", "id": sid}
+
+    @app.get("/api/memory/events")
+    def memory_events(limit: int = 50) -> dict[str, Any]:
+        return {"events": st.memory.events(limit=max(1, min(limit, 500)))}
+
+    @app.post("/api/memory/search")
+    def search_memory(body: MemorySearch) -> dict[str, Any]:
+        """Rank memories against a question, the same way a prompt would.
+
+        Exposed so the panel can show *why* an answer saw what it saw instead of
+        asking the user to trust an opaque selection.
+        """
+        return {"items": st.memory_service.retrieve(
+            body.query, project_id=body.project_id, limit=body.limit)}
+
+    @app.post("/api/memory/extract")
+    def extract_memory(body: MemoryExtractRequest) -> dict[str, Any]:
+        if st.conversations.get(body.conversation_id) is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        try:
+            return st.memory_service.extract_conversation(body.conversation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/memory/forget-match")
+    def forget_match(body: MemoryForgetMatch) -> dict[str, Any]:
+        return st.memory.forget_matching(body.phrase)
+
     @app.get("/api/memory")
-    def list_memory(category: str | None = None, q: str | None = None) -> dict[str, Any]:
-        items = st.memory.search(q) if q else st.memory.list(category=category)
-        return {"items": items, "stats": st.memory.stats()}
+    def list_memory(category: str | None = None, q: str | None = None,
+                    project_id: str | None = None,
+                    include_superseded: bool = False) -> dict[str, Any]:
+        if q:
+            items = st.memory.search(q, limit=200,
+                                     include_superseded=include_superseded)
+        else:
+            items = st.memory.list(category=category, limit=200,
+                                   project_id=project_id,
+                                   include_superseded=include_superseded)
+        return {"items": items, "stats": st.memory.stats(),
+                "status": st.memory_service.status()}
 
     @app.post("/api/memory")
     def add_memory(body: MemoryCreate) -> dict[str, Any]:
+        if body.project_id and st.projects.get(body.project_id) is None:
+            raise HTTPException(status_code=404, detail="Project not found")
         try:
             return st.memory.add(body.category, body.content,
-                                 source=body.source, pinned=body.pinned)
+                                 source=body.source, pinned=body.pinned,
+                                 confidence=body.confidence,
+                                 importance=body.importance,
+                                 project_id=body.project_id or None,
+                                 origin="manual", dedupe=False)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.patch("/api/memory/{item_id}")
+    def patch_memory(item_id: str, body: MemoryPatch) -> dict[str, Any]:
+        changes = body.model_dump(exclude_none=True)
+        if "project_id" in body.model_fields_set:
+            changes["project_id"] = body.project_id or None
+        try:
+            updated = st.memory.update(item_id, **changes)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Memory item not found")
+        return updated
 
     @app.delete("/api/memory/{item_id}")
     def delete_memory(item_id: str) -> dict[str, Any]:

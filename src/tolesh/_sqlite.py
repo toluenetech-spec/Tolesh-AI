@@ -19,10 +19,49 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 # How long a writer waits for the lock before raising, in milliseconds.
 BUSY_TIMEOUT_MS = 5000
+
+# How long a statement keeps retrying a table lock, in seconds. Shared-cache
+# in-memory databases (used by tests and by an in-memory AppState) take
+# table-level locks that the busy handler does not retry, so two stores writing
+# at once surfaced as "database table is locked" — a real failure, not a slow
+# query. File databases use WAL and rarely reach this path.
+_LOCKED_RETRY_SECONDS = 2.0
+_LOCKED_MESSAGES = ("database is locked", "database table is locked")
+
+
+class _RetryingConnection(sqlite3.Connection):
+    """Connection that retries a statement whose table was momentarily locked.
+
+    Only single statements are retried, which is what the stores issue. A
+    transaction spanning several statements is not replayed, because replaying
+    half of one would be worse than the error.
+    """
+
+    def _retry(self, operation, *args, **kwargs):
+        deadline = time.monotonic() + _LOCKED_RETRY_SECONDS
+        delay = 0.005
+        while True:
+            try:
+                return operation(*args, **kwargs)
+            except sqlite3.OperationalError as exc:
+                message = str(exc).lower()
+                if not any(text in message for text in _LOCKED_MESSAGES):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 2, 0.1)
+
+    def execute(self, *args, **kwargs):  # type: ignore[override]
+        return self._retry(super().execute, *args, **kwargs)
+
+    def executemany(self, *args, **kwargs):  # type: ignore[override]
+        return self._retry(super().executemany, *args, **kwargs)
 
 
 def default_data_dir() -> Path:
@@ -73,6 +112,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
         uri=is_uri,
         check_same_thread=False,
         timeout=BUSY_TIMEOUT_MS / 1000,
+        factory=_RetryingConnection,
     )
     if not is_uri and target != ":memory:":
         try:

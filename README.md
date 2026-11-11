@@ -204,10 +204,22 @@ every message body, with a snippet showing why a row matched) and **exported**
 as Markdown or JSON. The schema upgrade is additive and applied in place, so an
 existing `tolesh.db` keeps every row.
 
+**Memory learns on its own.** After a reply is delivered, a background worker
+reads the exchange and keeps what is durable: preferences, stable facts about
+you, project decisions, ongoing tasks. It merges duplicates, supersedes a fact
+you correct, and refuses credentials, hypotheticals and anything that reads like
+an instruction. Answers retrieve the few memories that bear on the question —
+not the whole store — and a memory filed under one project is invisible from
+another. Everything is visible, searchable, editable and deletable in the
+**Memory** tab, with switches for the master toggle, background learning,
+recall, the permitted categories and the per-answer budget.
+
 `memory_ext/store.py` is a separate, transparent, exportable SQLite store with
 five categories (`conversation`, `preference`, `personal`, `project`, `task`).
 Every item is listed in the UI, individually deletable, and `forget_everything`
-requires typing an explicit confirmation phrase.
+requires typing an explicit confirmation phrase. Forgetting also records a
+suppression, so the same fact is not re-learned from the next conversation.
+Full detail, including what retrieval cannot match: [`docs/MEMORY.md`](docs/MEMORY.md).
 
 ### Projects, files, web and code
 Four modules sit beside the chat core and none of them imports the interface:
@@ -322,6 +334,8 @@ queries on `.stream`, and is measured at seven widths by
 ---
 
 ## Documentation index
+
+- [`docs/MEMORY.md`](docs/MEMORY.md) — how automatic memory works, what it stores, what it refuses, and its limits
 
 | Document | Purpose |
 | --- | --- |

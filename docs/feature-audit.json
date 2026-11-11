@@ -1,0 +1,352 @@
+{
+  "generated_at": 1794362160.886419,
+  "features": [
+    {
+      "feature": "health reports the product and version",
+      "ok": true,
+      "detail": "0.1.0",
+      "gated": false
+    },
+    {
+      "feature": "provider catalogue is redacted",
+      "ok": true,
+      "detail": "no plaintext key in /api/providers",
+      "gated": false
+    },
+    {
+      "feature": "model catalogue lists models",
+      "ok": true,
+      "detail": "1 models",
+      "gated": false
+    },
+    {
+      "feature": "fallback order is readable and writable",
+      "ok": true,
+      "detail": "empty list restores the built-in chain",
+      "gated": false
+    },
+    {
+      "feature": "capabilities are declared",
+      "ok": true,
+      "detail": "{\"phases\": {\"mcp\": {\"available\": true, \"servers\": 2}, \"connectors\": {\"available\": true}, \"agents\": {\"available\": true}, ",
+      "gated": false
+    },
+    {
+      "feature": "create conversation",
+      "ok": true,
+      "detail": "66a9d6c37872c4c3",
+      "gated": false
+    },
+    {
+      "feature": "streamed chat (SSE)",
+      "ok": true,
+      "detail": "41 events: ['meta', 'status', 'token', 'token', 'token', 'token']",
+      "gated": false
+    },
+    {
+      "feature": "chat/sync returns a whole reply",
+      "ok": true,
+      "detail": "reply stored and returned",
+      "gated": false
+    },
+    {
+      "feature": "messages persist",
+      "ok": true,
+      "detail": "4 messages",
+      "gated": false
+    },
+    {
+      "feature": "rename and pin conversation",
+      "ok": true,
+      "detail": "title=Renamed pinned=True",
+      "gated": false
+    },
+    {
+      "feature": "list conversations",
+      "ok": true,
+      "detail": "created conversation appears in the list",
+      "gated": false
+    },
+    {
+      "feature": "edit a message",
+      "ok": true,
+      "detail": "edit is visible on re-read",
+      "gated": false
+    },
+    {
+      "feature": "regenerate the last answer",
+      "ok": true,
+      "detail": "status 200",
+      "gated": false
+    },
+    {
+      "feature": "branch a conversation",
+      "ok": true,
+      "detail": "new conversation ea8985aedf2dfac3",
+      "gated": false
+    },
+    {
+      "feature": "export one conversation",
+      "ok": true,
+      "detail": "markdown and json both render",
+      "gated": false
+    },
+    {
+      "feature": "projects: create, patch, file a conversation",
+      "ok": true,
+      "detail": "project e6cffcf89d887bf0 linked to the conversation",
+      "gated": false
+    },
+    {
+      "feature": "project instructions reach the model",
+      "ok": true,
+      "detail": "project instructions are in the system prompt",
+      "gated": false
+    },
+    {
+      "feature": "upload an attachment",
+      "ok": true,
+      "detail": "uploaded 134eff589452dcab",
+      "gated": false
+    },
+    {
+      "feature": "profile a table and render a chart",
+      "ok": true,
+      "detail": "profile columns=2, chart 27054 bytes",
+      "gated": false
+    },
+    {
+      "feature": "artifacts: list, fetch, delete",
+      "ok": true,
+      "detail": "list, fetch, delete",
+      "gated": false
+    },
+    {
+      "feature": "memory: add, search, learn from a conversation",
+      "ok": true,
+      "detail": "1 manual, 1 ranked, 2 learned",
+      "gated": false
+    },
+    {
+      "feature": "memory switches change behaviour",
+      "ok": true,
+      "detail": "retrieval switch really stops retrieval",
+      "gated": false
+    },
+    {
+      "feature": "agent run streams to a final answer",
+      "ok": true,
+      "detail": "3 events, final=True",
+      "gated": false
+    },
+    {
+      "feature": "agent run can be cancelled",
+      "ok": true,
+      "detail": "cancel acknowledged",
+      "gated": false
+    },
+    {
+      "feature": "agent tools are listed",
+      "ok": true,
+      "detail": "17 tools",
+      "gated": false
+    },
+    {
+      "feature": "MCP: register, test, list tools, invoke, remove",
+      "ok": true,
+      "detail": "3 tools, invoke=ok",
+      "gated": false
+    },
+    {
+      "feature": "connectors: catalogue and token connect",
+      "ok": true,
+      "detail": "6 providers catalogued, connect -> 400",
+      "gated": false
+    },
+    {
+      "feature": "jobs: schedule, pause, resume, run now, history",
+      "ok": true,
+      "detail": "run status=scheduled, 1 recorded run(s)",
+      "gated": false
+    },
+    {
+      "feature": "notifications are readable",
+      "ok": true,
+      "detail": "mark-all-read accepted",
+      "gated": false
+    },
+    {
+      "feature": "assistants and templates",
+      "ok": true,
+      "detail": "assistant and template round-trip",
+      "gated": false
+    },
+    {
+      "feature": "share links: create, open, revoke",
+      "ok": true,
+      "detail": "share link renders and can be revoked",
+      "gated": false
+    },
+    {
+      "feature": "settings validate and persist",
+      "ok": true,
+      "detail": "validated, persisted, resettable",
+      "gated": false
+    },
+    {
+      "feature": "audit log records actions",
+      "ok": true,
+      "detail": "3 entries",
+      "gated": false
+    },
+    {
+      "feature": "permission gate: approve and deny",
+      "ok": true,
+      "detail": "approve=200 deny=200",
+      "gated": false
+    },
+    {
+      "feature": "tool inventory",
+      "ok": true,
+      "detail": "12 tools",
+      "gated": false
+    },
+    {
+      "feature": "sandboxed python",
+      "ok": true,
+      "detail": "exec returns real output",
+      "gated": false
+    },
+    {
+      "feature": "web backends are reported",
+      "ok": true,
+      "detail": "{\"search_backends\": [\"wikipedia\"], \"network_isolation\": true}",
+      "gated": false
+    },
+    {
+      "feature": "usage ledger records tokens",
+      "ok": true,
+      "detail": "{\"requests\": 7, \"prompt_tokens\": 5673, \"completion_tokens\": 716, \"total_tokens\": 6389, \"avg_latency_ms\": 1.9, \"errors\": ",
+      "gated": false
+    },
+    {
+      "feature": "export everything as a zip",
+      "ok": true,
+      "detail": "11 files",
+      "gated": false
+    },
+    {
+      "feature": "delete all data requires confirmation",
+      "ok": true,
+      "detail": "refused=400, accepted=200",
+      "gated": false
+    },
+    {
+      "feature": "memory: forget-match, suppressions, status, events, wipe",
+      "ok": true,
+      "detail": "1 forgotten, 8 audit events",
+      "gated": false
+    },
+    {
+      "feature": "delete an attachment",
+      "ok": true,
+      "detail": "delete is real, second delete 404s",
+      "gated": false
+    },
+    {
+      "feature": "agent runs: fetch, resume, delete",
+      "ok": true,
+      "detail": "resume=200, delete=200",
+      "gated": false
+    },
+    {
+      "feature": "jobs: patch, fetch, cancel",
+      "ok": true,
+      "detail": "patch, fetch, cancel",
+      "gated": false
+    },
+    {
+      "feature": "MCP: connect, aggregate tools, prompts, resources, calls",
+      "ok": true,
+      "detail": "9 tools, 1 prompts, 1 resources, 1 calls",
+      "gated": false
+    },
+    {
+      "feature": "providers and models can be switched",
+      "ok": true,
+      "detail": "provider and default-model writes accepted; offline engine guarded",
+      "gated": false
+    },
+    {
+      "feature": "notifications: list and mark read",
+      "ok": true,
+      "detail": "no notifications to mark (none created yet)",
+      "gated": false
+    },
+    {
+      "feature": "permission queues are readable",
+      "ok": true,
+      "detail": "0 pending, 4 audited",
+      "gated": false
+    },
+    {
+      "feature": "delete a project",
+      "ok": true,
+      "detail": "project deleted",
+      "gated": false
+    },
+    {
+      "feature": "image generation",
+      "ok": false,
+      "detail": "needs a provider key that serves /images/generations",
+      "gated": true
+    },
+    {
+      "feature": "speech synthesis",
+      "ok": false,
+      "detail": "no voice installed: No local Piper voice and no TTS API key are configured.",
+      "gated": true
+    },
+    {
+      "feature": "transcription",
+      "ok": false,
+      "detail": "the local engine is available, but this audit has no audio fixture to feed it; covered by tests/test_dictation.py",
+      "gated": true
+    },
+    {
+      "feature": "OAuth connectors",
+      "ok": false,
+      "detail": "needs a real client id/secret and a provider redirect",
+      "gated": true
+    }
+  ],
+  "summary": {
+    "passed": 49,
+    "failed": 0,
+    "gated": 4,
+    "total": 53
+  },
+  "routes": {
+    "total": 107,
+    "visited": 92,
+    "uncovered": [
+      "/api/connectors/oauth/callback",
+      "/api/connectors/oauth/complete",
+      "/api/connectors/oauth/start",
+      "/api/connectors/{connection_id}/actions",
+      "/api/connectors/{connection_id}/actions/{action}",
+      "/api/connectors/{connection_id}/test",
+      "/api/mcp/servers/{name}/prompts/run",
+      "/api/mcp/servers/{name}/resources/read",
+      "/api/media/describe",
+      "/api/media/images",
+      "/api/media/speak",
+      "/api/media/transcribe",
+      "/api/notifications/{notification_id}/read",
+      "/api/providers/{name}/models",
+      "/api/providers/{name}/test",
+      "/api/web/fetch",
+      "/api/web/search"
+    ]
+  }
+}

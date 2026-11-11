@@ -18,6 +18,12 @@ from .._sqlite import connect
 # imply otherwise.
 DEFAULTS: dict[str, Any] = {
     "memory_enabled": True,
+    "memory_auto_extract": True,
+    "memory_retrieval": True,
+    "memory_categories": ["preference", "personal", "project", "task"],
+    "memory_extraction_mode": "rules",
+    "memory_extraction_model": "",
+    "memory_retrieval_limit": 6,
     "web_access": True,
     "store_web_content": True,
     "code_execution": True,
@@ -33,6 +39,12 @@ _TYPES = {key: type(value) for key, value in DEFAULTS.items()}
 
 DESCRIPTIONS = {
     "memory_enabled": "Let Tolesh keep long-term notes about you.",
+    "memory_auto_extract": "Learn from conversations in the background, without being asked.",
+    "memory_retrieval": "Put relevant memories into the prompt when answering.",
+    "memory_categories": "Which kinds of memory may be stored automatically.",
+    "memory_extraction_mode": "'rules' is deterministic and free; 'model' asks a model to read the conversation.",
+    "memory_extraction_model": "Model used for extraction when the mode is 'model'. Empty lets the router choose.",
+    "memory_retrieval_limit": "How many memories one answer may see (1-12).",
     "web_access": "Allow reading web pages and searching when a message asks for it.",
     "store_web_content": "Keep retrieved page text with the conversation.",
     "code_execution": "Allow the sandboxed Python runner.",
@@ -43,6 +55,10 @@ DESCRIPTIONS = {
     "telemetry": "Tolesh sends no telemetry; this cannot be switched on.",
     "default_landing": "Which panel opens first.",
 }
+
+# Categories the memory layer understands. Kept here as a literal rather than an
+# import so the settings module stays dependency-free.
+MEMORY_CATEGORIES = ("conversation", "preference", "personal", "project", "task")
 
 
 class SettingsError(ValueError):
@@ -91,10 +107,22 @@ class SettingsStore:
                 raise SettingsError(f"{key} must be a whole number.")
             if expected is str and not isinstance(value, str):
                 raise SettingsError(f"{key} must be text.")
+            if expected is list:
+                if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                    raise SettingsError(f"{key} must be a list of category names.")
+                unknown = [v for v in value if v not in MEMORY_CATEGORIES]
+                if unknown:
+                    raise SettingsError(f"{key} contains an unknown category: {unknown[0]}")
             if key == "agent_max_steps" and not 1 <= value <= 40:
                 raise SettingsError("agent_max_steps must be between 1 and 40.")
             if key == "audit_retention_days" and not 1 <= value <= 3650:
                 raise SettingsError("audit_retention_days must be between 1 and 3650.")
+            if key == "memory_retrieval_limit" and not 1 <= value <= 12:
+                raise SettingsError("memory_retrieval_limit must be between 1 and 12.")
+            if key == "memory_extraction_mode" and value not in ("rules", "model"):
+                raise SettingsError("memory_extraction_mode must be 'rules' or 'model'.")
+            if key == "memory_extraction_model" and len(value) > 200:
+                raise SettingsError("memory_extraction_model is too long.")
             if key == "default_landing" and value not in ("chat", "workspace"):
                 raise SettingsError("default_landing must be 'chat' or 'workspace'.")
             cleaned[key] = value
