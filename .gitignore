@@ -29,3 +29,7 @@ _site/
 
 # Local run state: server/tunnel logs, the bearer token, the dev database.
 .run/
+
+# Cloudflare Worker: local secrets and wrangler's build cache.
+cloudflare/.dev.vars
+cloudflare/.wrangler/

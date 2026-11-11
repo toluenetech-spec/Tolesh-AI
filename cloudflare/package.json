@@ -1,0 +1,14 @@
+{
+  "name": "tolesh-cloudflare",
+  "private": true,
+  "description": "Cloudflare Worker that fronts the Tolesh Python engine",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,4 @@
+# Copy to .dev.vars and fill in. Never commit the real file.
+TOLESH_API_TOKEN=
+SESSION_SECRET=
+ORIGIN=http://127.0.0.1:8787
