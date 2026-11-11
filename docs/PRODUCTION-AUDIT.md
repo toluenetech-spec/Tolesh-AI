@@ -215,11 +215,11 @@ frame to Whisper.
 
 ## 5. Tests added
 
-80 new tests, all of which fail against the pre-audit code where applicable.
+81 new tests, all of which fail against the pre-audit code where applicable.
 
 | File | Tests | Covers |
 | --- | --- | --- |
-| `tests/test_security_audit.py` | 28 | constant-time token, gate binding, download cap, chat isolation, restart races |
+| `tests/test_security_audit.py` | 29 | constant-time token, gate binding, download cap, chat isolation, restart races |
 | `tests/test_jobs_reliability.py` | 22 | concurrent ticks, crash recovery, crash-loop pause, missed runs, long jobs, month/year/leap boundaries, DST, permanent errors, retry persistence |
 | `tests/test_lifecycle.py` | 9 | thread counts, duplicate workers, shutdown latency, no reply after stop, disabled detector costs nothing, gate cheaper than real time |
 | `tests/test_migrations.py` | 13 | legacy schema, idempotent migration, data survival, concurrent updates, integrity check |
@@ -227,7 +227,7 @@ frame to Whisper.
 
 Final results:
 
-* full suite — **6555 passed, 27 skipped, 2 deselected, 0 failed** (7 m 17 s)
+* full suite — **6556 passed, 27 skipped, 2 deselected, 0 failed** (7 m 16 s)
 * feature audit — **56 passed, 0 failed, 4 gated** (`docs/feature-audit.json`)
 
 ---
