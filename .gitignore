@@ -1,0 +1,18 @@
+# Empty placeholder files
+.bash_profile
+.bashrc
+.gitconfig
+.gitmodules
+.idea
+.mcp.json
+.profile
+.ripgreprc
+.vscode
+.zprofile
+.zshrc
+
+# Sensitive settings
+.claude/settings.local.json
+
+# Special device files
+.claude/agents
